@@ -1,0 +1,10 @@
+{
+  "id": "health_potion",
+  "name": "체력 물약",
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "rarity": "EPIC",
+    "type": "misc"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "steel_sword",
+  "name": "강철 검",
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "rarity": "common",
+    "type": "weapon",
+    "buyPrice": 3,
+    "weightUnits": 4,
+    "weapon": {
+      "type": "melee",
+      "baseDamage": 5,
+      "damageRange": { "min": 4, "max": 5 },
+      "staminaCost": 1.1,
+      "cooldown": 2.8,
+      "accuracy": 0.8,
+      "criticalChance": 0.1,
+      "criticalMultiplier": 1.2
+    },
+    "effects": [
+      {
+        "type": "bleeding",
+        "stack": 1,
+        "target": "enemy",
+        "trigger": "on_hit",
+        "chance": 0.1
+      }
+    ]
+  }
+}

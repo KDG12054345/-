@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "title": "Hybrid Mode Test Combat",
+    "description": "하이브리드 모드 테스트 - 보스 전투",
+    "xp": 3,
+    "combat": {
+      "enemyName": "산적 두목",
+      "enemyType": "bandit",
+      "enemyStats": {
+        "maxHealth": 200,
+        "attackPower": 25,
+        "accuracy": 85
+      },
+      "enemyInventory": {
+        "mode": "hybrid",
+        "items": [
+          {
+            "id": "legendary_weapon",
+            "position": {"x": 0, "y": 0},
+            "rotation": 0,
+            "comment": "보스 전용 무기 (필수)"
+          },
+          {
+            "id": "dragon_armor",
+            "position": {"x": 3, "y": 0},
+            "rotation": 0,
+            "comment": "보스 전용 갑옷 (필수)"
+          }
+        ],
+        "autoGeneration": {
+          "difficulty": "boss",
+          "level": 8,
+          "enemyType": "bandit",
+          "itemBudget": 400,
+          "excludeTypes": ["consumable"],
+          "comment": "나머지는 자동 생성 (소모품 제외)"
+        }
+      },
+      "vitalityPenalty": 2,
+      "sanityPenalty": 1,
+      "instantDeath": false
+    }
+  },
+  
+  "start": {
+    "ops": [
+      {
+        "say": "거대한 도끼를 든 산적 두목이 나타났다!",
+        "speaker": "내레이션"
+      },
+      {
+        "say": "네놈이 내 부하들을 해치운 놈이로구나... 직접 상대해주지!",
+        "speaker": "산적 두목"
+      },
+      {
+        "choice": [
+          {
+            "id": "fight",
+            "text": "보스 전투를 시작한다",
+            "effects": [
+              {
+                "type": "customEvent",
+                "data": {
+                  "eventType": "enterCombat",
+                  "title": "산적 두목과의 결전",
+                  "enemyName": "산적 두목",
+                  "enemyType": "bandit",
+                  "enemyStats": {
+                    "maxHealth": 200,
+                    "attackPower": 25,
+                    "accuracy": 85
+                  },
+                  "enemyInventory": {
+                    "mode": "hybrid",
+                    "items": [
+                      {
+                        "id": "legendary_weapon",
+                        "position": {"x": 0, "y": 0},
+                        "rotation": 0
+                      },
+                      {
+                        "id": "dragon_armor",
+                        "position": {"x": 3, "y": 0},
+                        "rotation": 0
+                      }
+                    ],
+                    "autoGeneration": {
+                      "difficulty": "boss",
+                      "level": 8,
+                      "enemyType": "bandit",
+                      "itemBudget": 400,
+                      "excludeTypes": ["consumable"]
+                    }
+                  },
+                  "vitalityPenalty": 2,
+                  "sanityPenalty": 1
+                }
+              }
+            ],
+            "next": {"end": true}
+          },
+          {
+            "id": "negotiate",
+            "text": "협상을 시도한다",
+            "conditions": {
+              "stats": {"charisma": 8}
+            },
+            "effects": [
+              {
+                "type": "changeStat",
+                "data": {"stats": {"gold": -100}}
+              }
+            ],
+            "next": {"end": true}
+          }
+        ]
+      }
+    ]
+  }
+}
+

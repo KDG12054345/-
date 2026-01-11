@@ -1,0 +1,31 @@
+{
+  "id": "dagger",
+  "name": "단검",
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "rarity": "common",
+    "type": "weapon",
+    "buyPrice": 3,
+    "weightUnits": 4,
+    "weapon": {
+      "type": "melee",
+      "baseDamage": 3,
+      "damageRange": { "min": 2, "max": 5 },
+      "staminaCost": 0,
+      "cooldown": 2.0,
+      "accuracy": 0.8,
+      "criticalChance": 0.1,
+      "criticalMultiplier": 1.1
+    },
+    "effects": [
+      {
+        "type": "bleeding",
+        "stack": 1,
+        "target": "enemy",
+        "trigger": "on_hit",
+        "chance": 0.1
+      }
+    ]
+  }
+}

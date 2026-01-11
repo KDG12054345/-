@@ -1,0 +1,373 @@
+{
+  "// ============================================": "",
+  "// DialogueEngine 완전한 스키마 (모든 기능)": "",
+  "// ============================================": "",
+  
+  "scene_name": {
+    "// ===== 씬 정의 =====": "",
+    
+    "ops": [
+      {
+        "// ----- say 오퍼레이션 (텍스트 표시) -----": "",
+        "say": "표시할 텍스트",
+        "speaker": "화자 이름 (선택사항)"
+      },
+      
+      {
+        "// ----- choice 오퍼레이션 (선택지) -----": "",
+        "choice": [
+          {
+            "id": "선택지_고유_id",
+            "text": "선택지에 표시될 텍스트",
+            
+            "// --- 다음 씬 지정 (3가지 방법 중 1개 선택) ---": "",
+            "next": {"scene": "다음_씬_id"},
+            "next": {"scene": "씬_id", "node": "노드_id"},
+            "next": {"jump": {"file": "파일경로", "scene": "씬_id"}},
+            "next": {"end": true},
+            
+            "// --- 조건 (모두 충족해야 선택 가능) ---": "",
+            "conditions": {
+              "stats": {
+                "스탯_이름": "최소값_number"
+              },
+              "items": [
+                "필요한_아이템_id_1",
+                "필요한_아이템_id_2"
+              ],
+              "flags": {
+                "플래그_이름": "true 또는 false"
+              }
+            },
+            
+            "// --- 선택 시 효과 (배열 형식) ---": "",
+            "effects": [
+              {
+                "type": "changeStat",
+                "data": {"stats": {"스탯이름": "변경량_number"}},
+                "description": "설명_선택사항"
+              },
+              {
+                "type": "addItem",
+                "data": {"item": "아이템_id"},
+                "description": "설명_선택사항"
+              },
+              {
+                "type": "removeItem",
+                "data": {"item": "아이템_id"},
+                "description": "설명_선택사항"
+              },
+              {
+                "type": "setFlag",
+                "data": {"flag": "플래그이름", "value": "true_or_false"},
+                "description": "설명_선택사항"
+              },
+              {
+                "type": "changeScene",
+                "data": {"scene": "씬_id"},
+                "description": "설명_선택사항"
+              },
+              {
+                "type": "customEvent",
+                "data": {"이벤트": "커스텀_데이터"},
+                "description": "설명_선택사항"
+              }
+            ],
+            
+            "// --- 기타 속성 ---": "",
+            "enabled": "true_or_false (기본값: true)",
+            "disabledReason": "비활성화_이유_텍스트",
+            "isBranchPoint": "true_or_false (중요_분기점_표시)",
+            "metadata": {
+              "커스텀_키": "커스텀_값"
+            }
+          }
+        ]
+      },
+      
+      {
+        "// ----- effect 오퍼레이션 (게임 상태 변경) -----": "",
+        "effect": {
+          "// 스탯 변경 (delta 값)": "",
+          "stat": {
+            "hp": "변경량_number (양수=증가, 음수=감소)",
+            "mp": "변경량_number",
+            "gold": "변경량_number",
+            "커스텀_스탯": "변경량_number"
+          },
+          
+          "// 플래그 설정": "",
+          "flag": {
+            "플래그_이름_1": "true_or_false",
+            "플래그_이름_2": "true_or_false"
+          },
+          
+          "// 아이템 추가/제거": "",
+          "item": {
+            "add": "추가할_아이템_id 또는 [아이템1, 아이템2]",
+            "remove": "제거할_아이템_id 또는 [아이템1, 아이템2]"
+          }
+        }
+      },
+      
+      {
+        "// ----- jump 오퍼레이션 (다른 파일로 이동) -----": "",
+        "jump": {
+          "file": "assets/dialogue/경로/파일.json",
+          "scene": "씬_id",
+          "node": "노드_id (선택사항)"
+        }
+      },
+      
+      {
+        "// ----- end 오퍼레이션 (대화 종료) -----": "",
+        "end": true
+      }
+    ],
+    
+    "// ===== 씬 레벨 효과 (선택사항) =====": "",
+    "onEnter": [
+      {
+        "// 씬 진입 시 자동 실행": "",
+        "type": "효과_타입 (changeStat|addItem|removeItem|setFlag|...)",
+        "data": {},
+        "description": "설명"
+      }
+    ],
+    
+    "onExit": [
+      {
+        "// 씬 종료 시 자동 실행": "",
+        "type": "효과_타입",
+        "data": {},
+        "description": "설명"
+      }
+    ],
+    
+    "// ===== 씬 메타데이터 (선택사항) =====": "",
+    "metadata": {
+      "커스텀_키": "커스텀_값"
+    }
+  },
+  
+  "// ============================================": "",
+  "// 조건(Condition) 상세 스펙": "",
+  "// ============================================": "",
+  
+  "조건_예시_씬": {
+    "ops": [
+      {
+        "choice": [
+          {
+            "id": "complex_choice",
+            "text": "복잡한 조건 선택지",
+            
+            "// === 기본 조건 ===": "",
+            "conditions": {
+              "// 스탯 조건 (최소값)": "",
+              "stats": {
+                "strength": 10,
+                "intelligence": 8
+              },
+              
+              "// 아이템 소유 조건": "",
+              "items": ["sword", "shield"],
+              
+              "// 플래그 조건": "",
+              "flags": {
+                "quest_started": true,
+                "boss_defeated": false
+              }
+            },
+            
+            "// === 고급 조건 (별도 effects 배열 내) ===": "",
+            "conditions_advanced": [
+              {
+                "// AND 조건 (모두 충족)": "",
+                "type": "and",
+                "data": {
+                  "conditions": ["조건1", "조건2"]
+                }
+              },
+              {
+                "// OR 조건 (하나 이상 충족)": "",
+                "type": "or",
+                "data": {
+                  "conditions": ["조건1", "조건2"]
+                }
+              },
+              {
+                "// NOT 조건 (충족하지 않음)": "",
+                "type": "not",
+                "data": {
+                  "condition": "조건"
+                }
+              },
+              {
+                "// 스탯 범위 조건": "",
+                "type": "hasStat",
+                "data": {
+                  "stat": "hp",
+                  "min": 50,
+                  "max": 100
+                }
+              },
+              {
+                "// 아이템 조건": "",
+                "type": "hasItem",
+                "data": {
+                  "item": "magic_sword"
+                }
+              },
+              {
+                "// 플래그 조건": "",
+                "type": "hasFlag",
+                "data": {
+                  "flag": "met_wizard",
+                  "value": true
+                }
+              },
+              {
+                "// 커스텀 조건": "",
+                "type": "custom",
+                "data": {
+                  "커스텀_조건_키": "커스텀_조건_값",
+                  "result": "true_or_false (외부에서 평가)"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  
+  "// ============================================": "",
+  "// 효과(Effect) 상세 스펙": "",
+  "// ============================================": "",
+  
+  "효과_예시_씬": {
+    "ops": [
+      {
+        "effect": {
+          "// === 간단한 형식 (오퍼레이션 내) ===": "",
+          
+          "// 스탯 변경": "",
+          "stat": {
+            "hp": -10,
+            "mp": 5,
+            "gold": 100,
+            "experience": 50
+          },
+          
+          "// 플래그 설정": "",
+          "flag": {
+            "quest_complete": true,
+            "boss_defeated": true,
+            "chapter_2_unlocked": true
+          },
+          
+          "// 아이템": "",
+          "item": {
+            "add": "legendary_sword",
+            "remove": "broken_sword"
+          }
+        }
+      },
+      
+      {
+        "choice": [
+          {
+            "id": "advanced_effect_choice",
+            "text": "고급 효과 선택지",
+            
+            "// === 고급 형식 (선택지 effects 배열) ===": "",
+            "effects": [
+              {
+                "// 스탯 변경": "",
+                "type": "changeStat",
+                "data": {
+                  "stats": {
+                    "hp": -20,
+                    "mp": 10
+                  }
+                },
+                "description": "체력 감소, 마나 회복"
+              },
+              {
+                "// 아이템 추가": "",
+                "type": "addItem",
+                "data": {
+                  "item": "health_potion"
+                },
+                "description": "체력 물약 획득"
+              },
+              {
+                "// 아이템 제거": "",
+                "type": "removeItem",
+                "data": {
+                  "item": "quest_item"
+                },
+                "description": "퀘스트 아이템 소모"
+              },
+              {
+                "// 플래그 설정": "",
+                "type": "setFlag",
+                "data": {
+                  "flag": "event_triggered",
+                  "value": true
+                },
+                "description": "이벤트 플래그 활성화"
+              },
+              {
+                "// 씬 변경": "",
+                "type": "changeScene",
+                "data": {
+                  "scene": "next_scene"
+                },
+                "description": "다음 씬으로 이동"
+              },
+              {
+                "// 커스텀 이벤트": "",
+                "type": "customEvent",
+                "data": {
+                  "eventType": "achievement_unlock",
+                  "achievementId": "first_boss"
+                },
+                "description": "도전과제 해금"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  
+  "// ============================================": "",
+  "// 파일 레벨 메타데이터 (선택사항)": "",
+  "// ============================================": "",
+  
+  "metadata": {
+    "version": "파일_버전",
+    "author": "작성자",
+    "description": "파일_설명",
+    "tags": ["태그1", "태그2"],
+    "커스텀_필드": "커스텀_값"
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

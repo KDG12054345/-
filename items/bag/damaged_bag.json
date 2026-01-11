@@ -1,0 +1,17 @@
+{
+  "id": "damaged_bag",
+  "name": "구멍난 가방",
+  "rarity": "common",
+  "buyPrice": 2,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "type": "bag",
+    "bag": {
+      "bagSlotCost": 1,
+      "itemSlotCount": 1,
+      "weightBonus": 2
+    },
+    "iconPath": "assets/items/damaged_bag.png"
+  }
+}

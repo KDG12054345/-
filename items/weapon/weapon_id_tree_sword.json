@@ -1,0 +1,23 @@
+{
+  "id": "weapon_id_tree_sword",
+  "name": "목검",
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "rarity": "일반",
+    "type": "weapon",
+    "buyPrice": 3,
+    "weightUnits": 4,
+    "weapon": {
+      "type": "melee",
+      "baseDamage": 5.0,
+      "damageRange": { "min": 2, "max": 4 },
+      "staminaCost": 1.0,
+      "cooldown": 2.0,
+      "accuracy": 0.8,
+      "criticalChance": 0.1,
+      "criticalMultiplier": 1.2
+    },
+    "effects": []
+  }
+}

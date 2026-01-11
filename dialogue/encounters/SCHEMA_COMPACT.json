@@ -1,0 +1,133 @@
+{
+  "// === DialogueEngine 인카운터 작성 형식 ===": "",
+  
+  "scene_name": {
+    "ops": [
+      {
+        "// 텍스트 표시": "",
+        "say": "텍스트 내용",
+        "speaker": "화자_선택사항"
+      },
+      {
+        "// 선택지": "",
+        "choice": [
+          {
+            "id": "필수_고유id",
+            "text": "필수_선택지_텍스트",
+            "next": {"scene": "다음씬_id"},
+            
+            "// 조건 (모두 충족 시 표시)": "",
+            "conditions": {
+              "stats": {"스탯명": "최소값_number"},
+              "items": ["아이템id1", "아이템id2"],
+              "flags": {"플래그명": "boolean"}
+            },
+            
+            "// 선택 시 효과": "",
+            "effects": [
+              {
+                "type": "changeStat | addItem | removeItem | setFlag | changeScene | customEvent",
+                "data": {"키": "값"},
+                "description": "설명_선택"
+              }
+            ],
+            
+            "enabled": "boolean_기본true",
+            "disabledReason": "비활성_이유_선택",
+            "isBranchPoint": "boolean_기본false"
+          }
+        ]
+      },
+      {
+        "// 게임 상태 변경": "",
+        "effect": {
+          "stat": {"스탯명": "변경량_number"},
+          "flag": {"플래그명": "boolean"},
+          "item": {"add": "아이템id", "remove": "아이템id"}
+        }
+      },
+      {
+        "// 다른 파일로 이동": "",
+        "jump": {
+          "file": "경로.json",
+          "scene": "씬id"
+        }
+      },
+      {
+        "// 대화 종료": "",
+        "end": true
+      }
+    ]
+  },
+  
+  "// === 조건 상세 ===": "",
+  "조건_타입": {
+    "// 기본 형식": "",
+    "conditions": {
+      "stats": {"strength": 10, "intelligence": 8},
+      "items": ["sword", "shield"],
+      "flags": {"quest_done": true}
+    },
+    
+    "// 고급 형식 (배열)": "",
+    "conditions_고급": [
+      {"type": "hasStat", "data": {"stat": "이름", "min": "값", "max": "값_선택"}},
+      {"type": "hasItem", "data": {"item": "아이템id"}},
+      {"type": "hasFlag", "data": {"flag": "이름", "value": "boolean"}},
+      {"type": "and", "data": {"conditions": ["조건들"]}},
+      {"type": "or", "data": {"conditions": ["조건들"]}},
+      {"type": "not", "data": {"condition": "조건"}},
+      {"type": "custom", "data": {"커스텀": "값"}}
+    ]
+  },
+  
+  "// === 효과 상세 ===": "",
+  "효과_타입": {
+    "// 간단 (effect 내)": "",
+    "effect": {
+      "stat": {"hp": -10, "gold": 50},
+      "flag": {"completed": true},
+      "item": {"add": "sword", "remove": "old_sword"}
+    },
+    
+    "// 고급 (effects 배열)": "",
+    "effects": [
+      {"type": "changeStat", "data": {"stats": {"hp": -10}}},
+      {"type": "addItem", "data": {"item": "sword"}},
+      {"type": "removeItem", "data": {"item": "old"}},
+      {"type": "setFlag", "data": {"flag": "done", "value": true}},
+      {"type": "changeScene", "data": {"scene": "씬id"}},
+      {"type": "customEvent", "data": {"커스텀": "값"}}
+    ]
+  },
+  
+  "// === next 옵션 ===": "",
+  "next_옵션": {
+    "next": {"scene": "씬id"},
+    "next": {"scene": "씬id", "node": "노드id"},
+    "next": {"jump": {"file": "경로", "scene": "씬id"}},
+    "next": {"end": true}
+  },
+  
+  "// === 전체 타입 정리 ===": "",
+  "타입": {
+    "ConditionType": ["hasStat", "hasItem", "hasFlag", "and", "or", "not", "custom"],
+    "EffectType": ["changeStat", "addItem", "removeItem", "setFlag", "changeScene", "customEvent"]
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

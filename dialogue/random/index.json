@@ -1,0 +1,25 @@
+{
+  "description": "반복 발생 랜덤 인카운터 (카테고리별)",
+  "categories": [
+    {
+      "id": "combat",
+      "name": "전투",
+      "path": "assets/dialogue/random/combat/index.json",
+      "weight": 100
+    }
+  ]
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

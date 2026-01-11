@@ -1,0 +1,17 @@
+{
+  "id": "damaged_large_bag",
+  "name": "구멍난 대형 가방",
+  "rarity": "rare",
+  "buyPrice": 4,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "type": "bag",
+    "bag": {
+      "bagSlotCost": 2,
+      "itemSlotCount": 2,
+      "weightBonus": 3
+    },
+    "iconPath": "assets/items/damaged_large_bag.png"
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "metadata": {
+    "title": "Manual Mode Test Combat",
+    "description": "수동 배치 테스트 - 도적 조우",
+    "xp": 2,
+    "combat": {
+      "enemyName": "산적",
+      "enemyType": "bandit",
+      "enemyStats": {
+        "maxHealth": 100,
+        "attackPower": 18,
+        "accuracy": 75
+      },
+      "enemyInventory": {
+        "mode": "manual",
+        "grid": {
+          "width": 9,
+          "height": 6
+        },
+        "items": [
+          {
+            "id": "rusty_dagger",
+            "position": {"x": 0, "y": 0},
+            "rotation": 0,
+            "comment": "주무기"
+          },
+          {
+            "id": "torn_cloth",
+            "position": {"x": 2, "y": 0},
+            "rotation": 0,
+            "comment": "갑옷"
+          },
+          {
+            "id": "healing_potion",
+            "position": {"x": 5, "y": 0},
+            "rotation": 0,
+            "comment": "회복 포션"
+          }
+        ]
+      },
+      "vitalityPenalty": 1,
+      "sanityPenalty": 0
+    }
+  },
+  
+  "start": {
+    "ops": [
+      {
+        "say": "숲길을 가로막는 산적이 나타났다!",
+        "speaker": "내레이션"
+      },
+      {
+        "say": "돈이나 목숨 중 하나를 내놔!",
+        "speaker": "산적"
+      },
+      {
+        "choice": [
+          {
+            "id": "fight",
+            "text": "전투를 시작한다",
+            "effects": [
+              {
+                "type": "customEvent",
+                "data": {
+                  "eventType": "enterCombat",
+                  "title": "산적과의 전투",
+                  "enemyName": "산적",
+                  "enemyType": "bandit",
+                  "enemyStats": {
+                    "maxHealth": 100,
+                    "attackPower": 18,
+                    "accuracy": 75
+                  },
+                  "enemyInventory": {
+                    "mode": "manual",
+                    "items": [
+                      {
+                        "id": "rusty_dagger",
+                        "position": {"x": 0, "y": 0},
+                        "rotation": 0
+                      },
+                      {
+                        "id": "torn_cloth",
+                        "position": {"x": 2, "y": 0},
+                        "rotation": 0
+                      },
+                      {
+                        "id": "healing_potion",
+                        "position": {"x": 5, "y": 0},
+                        "rotation": 0
+                      }
+                    ]
+                  },
+                  "vitalityPenalty": 1,
+                  "sanityPenalty": 0
+                }
+              }
+            ],
+            "next": {"end": true}
+          },
+          {
+            "id": "run",
+            "text": "도망친다",
+            "next": {"end": true}
+          }
+        ]
+      }
+    ]
+  }
+}
+

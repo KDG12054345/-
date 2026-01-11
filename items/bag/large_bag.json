@@ -1,0 +1,18 @@
+{
+  "id": "large_bag",
+  "name": "대형 가방",
+  "rarity": "epic",
+  "buyPrice": 6,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "type": "bag",
+
+    "bag": {
+      "bagSlotCost": 2,
+      "itemSlotCount": 2,
+      "weightBonus": 6
+    },
+    "iconPath": "assets/items/large_bag.png"
+  }
+}

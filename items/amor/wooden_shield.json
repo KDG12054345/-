@@ -1,0 +1,14 @@
+{
+  "id": "wooden_shield",
+  "name": "나무 방패",
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "rarity": "COMMON",
+    "type": "armor",
+    "combat": {
+      "defenseRate": 0.05,
+      "flatDamageReduction": 1
+    }
+  }
+}

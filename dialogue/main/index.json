@@ -1,0 +1,19 @@
+{
+  "description": "메인 스토리 인카운터 (Chapter 메인 챕터 + Story 서브 스토리)",
+  "categories": [
+    {
+      "id": "chapter",
+      "name": "Chapter 메인 챕터",
+      "path": "assets/dialogue/main/chapter/index.json",
+      "description": "XP 20, 40, 60, 80, 100에서 트리거되는 메인 챕터 (시작 테마별)",
+      "weight": 0
+    },
+    {
+      "id": "story",
+      "name": "Story 서브 스토리",
+      "path": "assets/dialogue/main/story/index.json",
+      "description": "XP 10, 30, 50, 70, 90에서 트리거되는 서브 스토리 (공통)",
+      "weight": 0
+    }
+  ]
+}

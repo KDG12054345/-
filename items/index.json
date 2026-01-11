@@ -1,0 +1,15 @@
+{
+  "items": [
+    "weapon_id_tree_sword.json",
+    "steel_sword.json",
+    "wooden_shield.json",
+    "health_potion.json",
+    "dagger.json",
+    "shabby_robe.json",
+    "basic_bag.json",
+    "damaged_bag.json",
+    "large_bag.json",
+    "damaged_large_bag.json",
+    "pouch.json"
+  ]
+}

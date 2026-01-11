@@ -1,0 +1,13 @@
+{
+  "description": "전투 인카운터",
+  "files": [
+    {
+      "id": "test_combat_min",
+      "path": "assets/dialogue/random/combat/test_combat_min.json",
+      "weight": 10,
+      "tags": ["combat", "test", "easy"],
+      "minLevel": 1
+    }
+  ]
+}
+

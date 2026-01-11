@@ -1,0 +1,34 @@
+{
+  "id": "shabby_robe",
+  "name": "허름한 로브",
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "rarity": "COMMON",
+    "type": "armor",
+    "combat": {
+      "maxHealth": 25
+    },
+    "effects": [
+      {
+        "type": "resistance",
+        "stack": 2,
+        "target": "self",
+        "trigger": "on_combat_start"
+      },
+      {
+        "type": "mana",
+        "stack": 5,
+        "target": "self",
+        "trigger": "on_combat_start"
+      },
+      {
+        "type": "mana",
+        "stack": 2,
+        "target": "self",
+        "trigger": "passive",
+        "interval": 4.0
+      }
+    ]
+  }
+}

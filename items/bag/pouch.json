@@ -1,0 +1,17 @@
+{
+  "id": "pouch",
+  "name": "파우치",
+  "rarity": "common",
+  "buyPrice": 2,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "type": "bag",
+    "bag": {
+      "bagSlotCost": 1,
+      "itemSlotCount": 1,
+      "weightBonus": 1
+    },
+    "iconPath": "assets/items/pouch.png"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "basic_bag",
+  "name": "기본 가방",
+  "rarity": "common",
+  "buyPrice": 3,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "properties": {
+    "type": "bag",
+    "bag": {
+      "bagSlotCost": 1,
+      "itemSlotCount": 1,
+      "weightBonus": 4
+    },
+    "iconPath": "assets/items/basic_bag.png"
+  }
+}

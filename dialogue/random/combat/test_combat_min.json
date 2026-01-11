@@ -1,0 +1,95 @@
+{
+  "test_combat_min": {
+    "ops": [
+      {
+        "say": "당신은 숲길에서 낯선 기척을 느꼈습니다. 풀숲이 흔들리고, 무언가가 당신을 노려보고 있습니다."
+      },
+      {
+        "choice": [
+          {
+            "id": "go",
+            "text": "전투 준비",
+            "next": {
+              "scene": "combat_room"
+            }
+          },
+          {
+            "id": "leave",
+            "text": "조용히 물러난다",
+            "next": {
+              "scene": "combat_leave"
+            }
+          }
+        ]
+      },
+      {
+        "end": true
+      }
+    ]
+  },
+  "combat_room": {
+    "metadata": {
+      "enemyInventory": {
+        "mode": "auto",
+        "autoGeneration": {
+          "difficulty": "easy",
+          "level": 1,
+          "enemyType": "monster"
+        }
+      },
+      "victoryScene": "combat_win",
+      "defeatScene": "combat_lose"
+    },
+    "ops": [
+      {
+        "say": "전투가 시작됩니다!"
+      }
+    ]
+  },
+  "combat_win": {
+    "ops": [
+      {
+        "say": "당신은 적을 쓰러뜨렸습니다. 짧은 침묵 뒤, 숲은 다시 고요해졌습니다."
+      },
+      {
+        "effect": {
+          "stat": {
+            "gold": 5,
+            "xp": 1
+          }
+        }
+      },
+      {
+        "end": true
+      }
+    ]
+  },
+  "combat_lose": {
+    "ops": [
+      {
+        "say": "당신은 패배했습니다. 가까스로 목숨만 건진 채, 상처를 부여잡고 후퇴했습니다."
+      },
+      {
+        "effect": {
+          "stat": {
+            "vitality": -1,
+            "xp": 1
+          }
+        }
+      },
+      {
+        "end": true
+      }
+    ]
+  },
+  "combat_leave": {
+    "ops": [
+      {
+        "say": "당신은 불길한 예감을 따라 조용히 물러났습니다."
+      },
+      {
+        "end": true
+      }
+    ]
+  }
+}

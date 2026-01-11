@@ -1,0 +1,80 @@
+{
+  "milestoneStep": 10,
+  "chapterMilestones": [20, 40, 60, 80, 100],
+  "storyMilestones": [10, 30, 50, 70, 90],
+  "game": {
+    "end": 100,
+    "resetAtEnd": true
+  },
+  "tracks": {
+    "chapter": {
+      "poolByStart": {
+        "default": [
+          "chapter_knight_20",
+          "chapter_knight_40",
+          "chapter_knight_60",
+          "chapter_knight_80",
+          "chapter_knight_100"
+        ],
+        "start_knight": [
+          "chapter_knight_20",
+          "chapter_knight_40",
+          "chapter_knight_60",
+          "chapter_knight_80",
+          "chapter_knight_100"
+        ],
+        "start_mage": [
+          "chapter_mage_20",
+          "chapter_mage_40",
+          "chapter_mage_60",
+          "chapter_mage_80",
+          "chapter_mage_100"
+        ]
+      },
+      "selection": "weighted_random"
+    },
+    "story": {
+      "sequence": [
+        "story_10",
+        "story_30",
+        "story_50",
+        "story_70",
+        "story_90"
+      ],
+      "onMiss": "enqueue_next"
+    }
+  },
+  "endings": {
+    "default_ending": {
+      "title": "기본 엔딩",
+      "description": "모험을 완료했습니다.",
+      "conditions": {}
+    },
+    "start_knight_ending": {
+      "title": "기사의 귀환",
+      "description": "용맹한 기사로서 여정을 마쳤습니다.",
+      "conditions": {
+        "startTheme": "start_knight"
+      }
+    },
+    "start_mage_ending": {
+      "title": "마법사의 완성",
+      "description": "위대한 마법사가 되었습니다.",
+      "conditions": {
+        "startTheme": "start_mage"
+      }
+    },
+    "hero_ending": {
+      "title": "진정한 영웅",
+      "description": "모든 도전을 극복한 진정한 영웅이 되었습니다.",
+      "conditions": {
+        "minFlags": 5,
+        "flags": {
+          "saved_village": true,
+          "defeated_dragon": true
+        }
+      }
+    }
+  }
+}
+

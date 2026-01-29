@@ -1,864 +1,889 @@
-# 시스템 아키텍처 문서
+# Faust 아키텍처 문서 (Master)
 
-> **프로젝트**: Fantasy Life (텍스트 RPG)  
-> **작성일**: 2025-01-27  
-> **최종 업데이트**: 2025-01-11 (Combat Tick 최적화 + 이벤트 시스템 개선)  
-> **프로젝트 버전**: 1.0.0  
-> **기술 스택**: Flutter (Dart), Provider 패턴, 이벤트 기반 아키텍처
+> **참고**: 이 문서는 Faust 프로젝트의 아키텍처 개요를 제공하는 마스터 문서입니다. 상세 내용은 각 모듈별 문서를 참조하세요.
 
----
-
-## 📋 목차
+## 목차
 
 1. [전체 개요](#전체-개요)
 2. [아키텍처 패턴](#아키텍처-패턴)
-3. [디렉터리 구조](#디렉터리-구조)
-4. [핵심 컴포넌트](#핵심-컴포넌트)
-5. [데이터 흐름](#데이터-흐름)
-6. [모듈 시스템](#모듈-시스템)
-7. [주요 시스템](#주요-시스템)
-8. [상태 관리](#상태-관리)
+3. [레이어 구조](#레이어-구조)
+4. [모듈별 상세 문서](#모듈별-상세-문서)
+5. [서비스 아키텍처](#서비스-아키텍처)
+6. [의존성 그래프](#의존성-그래프)
+7. [데이터 흐름 요약](#데이터-흐름-요약)
+8. [보안 및 권한](#보안-및-권한)
+9. [확장성 고려사항](#확장성-고려사항)
+10. [성능 최적화](#성능-최적화)
+11. [테스트 전략](#테스트-전략)
+12. [변경 이력](#변경-이력-architecture-change-log)
 
 ---
 
-## 🎯 전체 개요
+## 전체 개요
 
-### 프로젝트 개요
-
-Fantasy Life는 Flutter 기반의 텍스트 RPG 게임입니다. 이벤트 기반 아키텍처와 모듈 패턴을 사용하여 확장 가능하고 유지보수하기 쉬운 구조를 가지고 있습니다.
-
-### 핵심 특징
-
-- **이벤트 기반 아키텍처**: 모든 게임 로직은 이벤트로 표현되고 처리됩니다
-- **모듈 패턴**: 기능별로 독립적인 모듈로 분리되어 느슨한 결합을 유지합니다
-- **상태 불변성**: `GameVM`은 불변 객체로, 모든 상태 변경은 `reduce()` 함수를 통해 순수하게 처리됩니다
-- **의존성 주입**: `GameController`에 모듈을 주입하여 테스트 가능성을 높입니다
-
-### 기술 스택
-
-| 기술 | 용도 |
-|------|------|
-| Flutter | 크로스 플랫폼 UI 프레임워크 |
-| Provider | 상태 관리 (전역 상태) |
-| JSON | 게임 데이터 (대화, 인카운터, 아이템) |
-| 이벤트 소싱 | 게임 상태 변경 추적 |
-
----
-
-## 🏗️ 아키텍처 패턴
-
-### 1. 이벤트 기반 아키텍처 (Event-Driven Architecture)
+Faust는 **계층형 아키텍처(Layered Architecture)**를 기반으로 하며, 각 레이어는 명확한 책임을 가집니다.
 
 ```
-┌─────────────────────────────────────────┐
-│         GameController (중앙 허브)        │
-│  - dispatch(GEvent)                     │
-│  - CmdQueue로 직렬 처리                  │
-│  - reduce() 상태 전이                    │
-│  - 모듈들에게 이벤트 전파                 │
-└─────────────┬───────────────────────────┘
-              │
-    ┌─────────┴─────────────────┐
-    │                           │
-    ▼                           ▼
-┌────────────┐            ┌────────────┐
-│ Module A   │            │ Module B   │
-│ - handle() │            │ - handle() │
-│ - return   │            │ - return   │
-│   [Event]  │            │   [Event]  │
-└────────────┘            └────────────┘
-```
-
-**특징:**
-- 모든 이벤트는 `GameController.dispatch()`로 전송
-- `CmdQueue`로 이벤트 직렬 처리 (race condition 방지)
-- 모듈은 `supportedPhases`와 `handledEvents`만 선언
-- 모듈이 새 이벤트 반환 → 재귀적으로 `dispatch()`
-
-### 2. CQRS 패턴 (Command Query Responsibility Segregation)
-
-- **Command (상태 변경)**: `reduce()` 함수로 순수하게 처리
-- **Query (상태 조회)**: `GameVM`을 직접 읽기
-- **Side Effect**: 모듈의 `handle()` 메서드에서 처리
-
-### 3. 모듈 패턴 (Plugin Architecture)
-
-```dart
-abstract interface class GameModule {
-  Set<AppPhase> get supportedPhases;      // 지원하는 게임 페이즈
-  Set<Type> get handledEvents;            // 처리하는 이벤트 타입
-  Future<List<GEvent>> handle(GEvent event, GameVM vm);  // 이벤트 처리
-}
-```
-
-**장점:**
-- 느슨한 결합: 모듈은 서로를 모르고 이벤트만 주고받음
-- 확장성: 새 기능은 새 모듈 추가로 구현
-- 테스트 용이: 모듈 단위로 독립 테스트 가능
-
----
-
-## 📁 디렉터리 구조
-
-```
-lib/
-├── main.dart                          # 앱 진입점
-├── app/
-│   └── app_wrapper.dart              # Provider 설정, 화면 라우팅
-│
-├── core/                             # 핵심 게임 로직
-│   ├── game_controller.dart          # 이벤트 허브, 모듈 조율
-│   ├── state/                        # 게임 상태 모델
-│   │   ├── game_state.dart          # GameVM (phase, text, choices, player, combat)
-│   │   ├── events.dart               # 이벤트 정의 (StartGame, Next, EnterCombat 등)
-│   │   ├── reducer.dart              # 순수 상태 전이 로직
-│   │   ├── app_phase.dart            # 게임 페이즈 enum
-│   │   └── combat_state.dart         # 전투 상태
-│   ├── character/                    # 캐릭터 데이터 모델
-│   ├── item/                         # 아이템 데이터 모델
-│   ├── infra/                        # 인프라 (command queue, phase gate 등)
-│   │   ├── combat_state_slot.dart    # Last-Value 슬롯 (UI 직접 구독)
-│   │   ├── event_envelope.dart       # 이벤트 메타데이터 래핑
-│   │   ├── event_timeline.dart       # 이벤트 타임라인 (순환 버퍼)
-│   │   ├── event_guards.dart         # 런타임 불변조건 검사
-│   │   └── combat_metrics.dart        # 전투 성능 메트릭
-│   ├── xp/                           # XP 시스템
-│   ├── skill_check/                  # 스킬 체크 시스템
-│   ├── milestone/                    # 마일스톤 시스템
-│   └── ending/                       # 엔딩 시스템
-│
-├── modules/                          # 게임 기능 모듈 (DI 패턴)
-│   ├── character_creation/           # 캐릭터 생성 모듈
-│   ├── combat/                       # 전투 모듈
-│   ├── encounter/                    # 인카운터 모듈
-│   ├── reward/                       # 보상 처리 모듈
-│   ├── xp/                           # 경험치/마일스톤 모듈
-│   ├── inventory/                    # 인벤토리 모듈
-│   └── save/                         # 저장 모듈
-│
-├── combat/                           # 전투 시스템 구현체
-│   ├── combat_system.dart            # 전투 엔진 (타이머 기반)
-│   ├── combat_engine.dart            # 전투 엔진 (메인)
-│   ├── character.dart                # 전투용 캐릭터 클래스
-│   ├── stats.dart                    # 전투 스탯
-│   └── ...
-│
-├── inventory/                        # 인벤토리 시스템 (슬롯/무게 기반)
-│   ├── inventory_system.dart         # 메인 시스템
-│   ├── inventory_item.dart           # 인벤토리 아이템
-│   ├── bag.dart                       # 가방 시스템
-│   ├── synergy_system.dart            # 시너지 시스템
-│   ├── combat_lock_system.dart       # 전투 중 잠금 시스템
-│   └── ...
-│
-├── dialogue/                         # 대화 시스템
-│   ├── dialogue_engine.dart          # 대화 엔진 (메인)
-│   ├── core/                         # 대화 코어 로직
-│   ├── loaders/                      # 대화 로더
-│   ├── plugins/                      # 대화 플러그인
-│   └── ...
-│
-├── screens/                          # UI 화면
-│   ├── start_screen.dart             # 시작 화면
-│   ├── game_screen.dart              # 게임 메인 화면
-│   ├── combat_screen.dart            # 전투 화면
-│   ├── game_over_screen.dart         # 게임 오버 화면
-│   └── reward_screen.dart            # 보상 화면
-│
-├── widgets/                          # 재사용 위젯
-├── theme/                           # UI 테마
-├── autosave/                         # 자동 저장 시스템
-└── storage/                          # 스토리지 레이어
+┌─────────────────────────────────────────────────────────┐
+│                    Presentation Layer                    │
+│  (UI Components, Activities, Fragments, Overlays)          │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│                   Service Layer                         │
+│  (AppBlockingService, PointMiningService, etc.)        │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│                  Business Logic Layer                    │
+│  (PenaltyService, WeeklyResetService)                   │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│                   Data Layer                            │
+│  (Room Database, SharedPreferences, DAOs)               │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔧 핵심 컴포넌트
+## 아키텍처 패턴
 
-### 인프라 컴포넌트 (신규)
+### 1. 계층형 아키텍처 (Layered Architecture)
+- **Presentation Layer**: UI 컴포넌트 및 사용자 인터랙션
+- **Service Layer**: 백그라운드 서비스 및 앱 모니터링
+- **Business Logic Layer**: 비즈니스 규칙 및 페널티 로직
+- **Data Layer**: 데이터 영속성 및 저장소
 
-#### 1. CombatStateSlot
+### 2. MVVM 패턴 (Model-View-ViewModel)
+- **View**: `MainActivity` - UI 렌더링 및 사용자 인터랙션
+- **ViewModel**: `MainViewModel` - 데이터 관찰 및 비즈니스 로직
+- **Model**: `FaustDatabase`, `PreferenceManager` - 데이터 소스
+- StateFlow를 통한 반응형 UI 업데이트
 
-**파일**: `lib/core/infra/combat_state_slot.dart`
+### 3. Repository 패턴 (암묵적)
+- DAO를 통한 데이터 접근 추상화
+- PreferenceManager를 통한 설정 데이터 관리
 
-**역할**: Last-Value 슬롯으로 `CombatState`를 UI에 직접 제공
-
-**특징:**
-- `ChangeNotifier` 기반으로 UI가 직접 구독
-- FIFO 큐 대신 최신 1개만 유지 (백프레셔)
-- sessionId 검증으로 경합/잔상 차단
-- 종료 후 업데이트 절대 금지
-
-**주요 메서드:**
-```dart
-void setSessionId(String id)                    // 새 전투 세션 시작
-void update(CombatState state, {required String sessionId})  // 상태 업데이트
-void markCombatEnded()                          // 전투 종료 (구독 갱신 중지)
-```
-
-#### 2. EventEnvelope
-
-**파일**: `lib/core/infra/event_envelope.dart`
-
-**역할**: 이벤트 메타데이터 래핑
-
-**주요 필드:**
-- `eventId`: 고유 식별자
-- `parentEventId`: 부모 이벤트 ID
-- `traceId`: 트레이스 ID (UserEvent에서 생성)
-- `origin`: 발생 모듈명
-- `depth`: 이벤트 체인 깊이
-- `timestamp`: 발생 시각
-
-#### 3. EventTimeline
-
-**파일**: `lib/core/infra/event_timeline.dart`
-
-**역할**: 최근 이벤트 순환 버퍼 (디버깅/추적용)
-
-**특징:**
-- 최근 100개 이벤트 유지
-- Internal 이벤트는 기록 금지 (요약만)
-- traceId로 그룹 조회
-- 자동 덤프 기능 (Guards 차단/불변조건 위반 시)
-
-#### 4. EventGuards
-
-**파일**: `lib/core/infra/event_guards.dart`
-
-**역할**: 런타임 불변조건 검사 및 Safe Mode
-
-**정책:**
-- `maxDepth(12)`: 이벤트 체인 깊이 제한
-- `maxEventsPerTrace(200)`: trace당 이벤트 수 제한
-- 폭주 감지: 동일 타입 20회/2초 (시뮬레이션 시간 기준)
-- Combat 종료 불변조건 검사
-- traceId/parentId 체인 검증
-
-**Safe Mode:**
-- 위반 시 타임라인 덤프 → 경고 로그 → 안전 상태 복귀 (앱 멈춤 금지)
-
-#### 5. CombatMetrics
-
-**파일**: `lib/core/infra/combat_metrics.dart`
-
-**역할**: 전투 성능 메트릭 수집 및 QA 리그레션 게이트
-
-**메트릭:**
-- `ticksProcessed`: 처리된 틱 수
-- `uiUpdatesSent`: UI 업데이트 횟수
-- `queueLengthHighWatermark`: 큐 최대 길이
-- `dispatchCountByTier`: tier별 dispatch 횟수
-- `slowTickCount`: 느린 틱 횟수 (>150ms)
-
-**QA 리그레션 게이트:**
-- 전투 60초 + 배속 x5 조건에서:
-  - `uiUpdatesSent`: 200~280
-  - `queueLengthHighWatermark`: ≤10
-  - `slowTickCount`: ≤5
-
-#### 6. CmdQueue (개선)
-
-**파일**: `lib/core/infra/command_queue.dart`
-
-**개선 사항:**
-- **우선순위 API**: `CombatResult`/`EnterReward`는 큐 맨 앞에 삽입
-- **Internal 거부**: `CombatStateUpdated`는 큐 삽입 금지
-- **메트릭**: highWatermark, rejectedInternalCount 추적
-
-### 1. GameController
-
-**파일**: `lib/core/game_controller.dart`
-
-**역할**: 이벤트 중앙 허브, 모든 게임 로직의 진입점
-
-**주요 메서드:**
-```dart
-class GameController extends ChangeNotifier {
-  Future<void> dispatch(GEvent e)                    // 이벤트 전송
-  Future<void> dispatchWithContext(...)              // 문맥 포함 이벤트 전송
-  GameVM get vm                                      // 현재 게임 상태
-  final CombatStateSlot combatStateSlot              // UI 직접 구독용 슬롯
-  final EventTimeline eventTimeline                 // 이벤트 타임라인
-  final EventGuards eventGuards                     // 런타임 검사
-  final CombatMetrics combatMetrics                 // 성능 메트릭
-}
-```
-
-**처리 흐름:**
-1. `dispatch(GEvent)` 호출
-2. `EventEnvelope`로 메타데이터 래핑 (traceId, parentId, depth)
-3. `EventGuards` 검사 (maxDepth, maxEventsPerTrace, 폭주 감지)
-4. `EventTimeline`에 기록 (Internal 이벤트 제외)
-5. `CmdQueue`에 이벤트 추가 (우선순위 처리, Internal 거부)
-6. `reduce(_vm, e)` 호출 → 순수 상태 전이
-7. 조건에 맞는 모듈들에게 이벤트 전파
-8. 모듈이 반환한 새 이벤트들을 재귀적으로 `dispatch()`
-
-### 2. GameVM (게임 상태)
-
-**파일**: `lib/core/state/game_state.dart`
-
-**역할**: 게임의 현재 상태를 나타내는 불변 객체
-
-**주요 필드:**
-```dart
-class GameVM {
-  final AppPhase phase;              // 현재 게임 페이즈
-  final String? text;                // 표시할 텍스트
-  final List<ChoiceVM> choices;       // 선택지 목록
-  final Player? player;              // 플레이어 정보
-  final CombatState? combat;          // 전투 상태
-  final InventorySystem? playerInventory;  // 플레이어 인벤토리
-  final String? victoryScenePath;     // 전투 승리 후 경로
-  final String? defeatScenePath;     // 전투 패배 후 경로
-}
-```
-
-**특징:**
-- 불변 객체: 모든 변경은 `copyWith()`로 새 인스턴스 생성
-- 순수 함수: `reduce()` 함수로 상태 전이
-
-### 3. Reducer
-
-**파일**: `lib/core/state/reducer.dart`
-
-**역할**: 순수 함수로 게임 상태 전이 처리
-
-**특징:**
-- 사이드 이펙트 없음
-- 동일 입력 → 동일 출력 보장
-- 테스트 용이
-
-### 4. 이벤트 시스템
-
-**파일**: `lib/core/state/events.dart`
-
-**이벤트 계층 (EventTier):**
-- **UserEvent**: 사용자 입력 이벤트 (`StartGame`, `Next`, `Choose`) - traceId 생성
-- **SystemEvent**: 시스템 이벤트 (`EnterCombat`, `CombatResult`, `EnterReward` 등) - traceId 상속
-- **InternalEvent**: 내부 이벤트 (`CombatStateUpdated`) - 큐 삽입 금지, 로그/타임라인 제외
-
-**주요 이벤트:**
-
-| 이벤트 | Tier | 발생 시점 | 처리 모듈 |
-|--------|------|---------|----------|
-| `StartGame` | User | 게임 시작 | CharacterCreationModule |
-| `CharacterCreated` | System | 캐릭터 생성 완료 | EncounterModule, XpModule, InventoryInitModule |
-| `Next` | User | 사용자가 다음 클릭 | EncounterModule, RewardModule |
-| `EnterCombat` | System | 전투 시작 | CombatModule |
-| `CombatStateUpdated` | Internal | 전투 상태 업데이트 (100ms 틱) | **슬롯만 사용, 큐 거부** |
-| `CombatResult` | System | 전투 종료 | CombatModule |
-| `EnterReward` | System | 보상 화면 진입 | RewardModule |
-| `LoadEncounter` | System | 특정 인카운터 로드 | EncounterModule, RewardModule |
-| `EncounterEnded` | System | 인카운터 종료 | XpModule |
-
-**이벤트 추적 시스템:**
-- **EventEnvelope**: 이벤트 메타데이터 (eventId, parentEventId, traceId, origin, depth, timestamp)
-- **EventTimeline**: 최근 100개 이벤트 순환 버퍼 (Internal 제외)
-- **traceId**: UserEvent에서 생성, 파생 이벤트는 부모로부터 상속
-- **parentId/depth**: 이벤트 체인 추적 (EnterCombat → CombatResult → EnterReward)
+### 4. Service-Oriented Architecture
+- 독립적인 Foreground Service들
+- 서비스 간 느슨한 결합
 
 ---
 
-## 🔄 데이터 흐름
+## 레이어 구조
 
-### 게임 시작 흐름
+### 📁 프로젝트 디렉토리 구조
 
-```mermaid
-graph TD
-    A[main] --> B[AppWrapper]
-    B --> C[GameController 생성]
-    C --> D[StartScreen 표시]
-    D --> E[사용자: 게임 시작 클릭]
-    E --> F[dispatch StartGame]
-    F --> G[reduce: phase = inGame]
-    G --> H[CharacterCreationModule]
-    H --> I[캐릭터 생성]
-    I --> J[dispatch CharacterCreated]
-    J --> K[EncounterModule]
-    K --> L[인카운터 로드]
-    L --> M[GameScreen 표시]
 ```
-
-### 전투 흐름 (최적화 후)
-
-```mermaid
-graph TD
-    A[DialogueEngine: enterCombat] --> B[dispatch EnterCombat]
-    B --> C[EventEnvelope 래핑 + traceId 생성]
-    C --> D[EventGuards 검사]
-    D --> E[EventTimeline 기록]
-    E --> F[reduce: phase = inGame_combat]
-    F --> G[CombatModule.handle]
-    G --> H[새 sessionId 발급]
-    H --> I[CombatStateSlot.setSessionId]
-    I --> J[InventoryAdapter로 플레이어 생성]
-    J --> K[적 인벤토리 로드]
-    K --> L[InventoryAdapter로 적 생성]
-    L --> M[CombatEngine 시작]
-    M --> N[인벤토리 잠금]
-    N --> O[첫 프레임 즉시 푸시]
-    O --> P[Timer.periodic 시작 100ms]
-    P --> Q[전투 루프]
-    Q --> R[dt 스케일링 x1~x5]
-    R --> S[CombatEngine.update]
-    S --> T[시뮬 시간 기준 250ms 샘플링]
-    T --> U[CombatStateSlot.update]
-    U --> V[UI 직접 구독 갱신]
-    V --> W[전투 종료 감지]
-    W --> X[마지막 상태 반영]
-    X --> Y[Timer.cancel + Slot.markCombatEnded]
-    Y --> Z[dispatchWithContext CombatResult]
-    Z --> AA[우선순위 큐 맨 앞 삽입]
-    AA --> AB[Guards 불변조건 검사]
-    AB --> AC{승리?}
-    AC -->|Yes| AD[dispatch EnterReward]
-    AC -->|No| AE[패배 처리]
-    AD --> AF[RewardScreen 표시]
-    AE --> AG{즉사/광기?}
-    AG -->|Yes| AH[GameOverScreen]
-    AG -->|No| AI[victoryScenePath로 이동]
-    AF --> AJ[LoadEncounter 또는 SlotOpened]
+com.faust/
+│
+├── 📱 Presentation Layer
+│   └── presentation/
+│       ├── view/
+│       │   ├── MainActivity.kt                    # 메인 액티비티 (ViewPager2로 Fragment 통합)
+│       │   ├── MainFragment.kt                    # 메인 Fragment (차단 앱 목록)
+│       │   ├── ShopFragment.kt                    # 상점 Fragment (프리 패스 구매/사용)
+│       │   ├── SettingsFragment.kt                # 설정 Fragment (사용자 지정 리셋 시간)
+│       │   ├── GuiltyNegotiationOverlay.kt        # 유죄 협상 오버레이
+│       │   ├── BlockedAppAdapter.kt                # 차단 앱 리스트 어댑터
+│       │   ├── AppSelectionDialog.kt              # 앱 선택 다이얼로그
+│       │   └── PersonaSelectionDialog.kt           # 페르소나 선택 다이얼로그
+│       └── viewmodel/
+│           ├── MainViewModel.kt                  # 메인 ViewModel (MVVM)
+│           └── ShopViewModel.kt                  # 상점 ViewModel (MVVM)
+│
+├── ⚙️ Service Layer
+│   └── services/
+│       ├── AppBlockingService.kt                  # 앱 차단 모니터링 서비스
+│       └── PointMiningService.kt                  # 포인트 채굴 서비스
+│
+├── 🧠 Business Logic Layer (Domain)
+│   └── domain/
+│       ├── PenaltyService.kt                      # 페널티 계산 및 적용
+│       ├── WeeklyResetService.kt                 # 주간 정산 로직
+│       ├── DailyResetService.kt                  # 일일 초기화 로직 (사용자 지정 시간 지원)
+│       ├── FreePassService.kt                   # 프리 패스 구매 및 사용 로직
+│       ├── AppGroupService.kt                    # 앱 그룹 관리 (SNS/OTT)
+│       ├── ActivePassService.kt                 # 활성 패스 추적 및 타이머 관리
+│       └── persona/                               # Persona Module (신규)
+│           ├── PersonaType.kt                    # 페르소나 타입 Enum
+│           ├── PersonaProfile.kt                  # 페르소나 프로필 데이터
+│           ├── PersonaEngine.kt                  # 피드백 조율 엔진
+│           ├── PersonaProvider.kt                 # 페르소나 설정 제공자
+│           ├── FeedbackMode.kt                   # 피드백 모드 Enum
+│           └── handlers/
+│               ├── VisualHandler.kt              # 시각 피드백 핸들러
+│               ├── HapticHandler.kt              # 촉각 피드백 핸들러
+│               └── AudioHandler.kt               # 청각 피드백 핸들러
+│
+├── 💾 Data Layer
+│   └── data/
+│       ├── database/
+│       │   ├── FaustDatabase.kt                  # Room 데이터베이스 (버전 2)
+│       │   ├── AppBlockDao.kt                     # 차단 앱 DAO
+│       │   ├── PointTransactionDao.kt             # 포인트 거래 DAO
+│       │   ├── FreePassItemDao.kt                 # 프리 패스 아이템 DAO
+│       │   ├── DailyUsageRecordDao.kt            # 일일 사용 기록 DAO
+│       │   └── AppGroupDao.kt                     # 앱 그룹 DAO
+│       │
+│       └── utils/
+│           ├── PreferenceManager.kt               # EncryptedSharedPreferences 관리
+│           └── TimeUtils.kt                       # 시간 계산 유틸리티 (사용자 지정 시간 지원)
+│
+├── 📦 Models
+│   └── models/
+│       ├── BlockedApp.kt                          # 차단 앱 엔티티
+│       ├── PointTransaction.kt                    # 포인트 거래 엔티티
+│       ├── UserTier.kt                            # 사용자 티어 enum
+│       ├── FreePassItem.kt                        # 프리 패스 아이템 엔티티
+│       ├── FreePassItemType.kt                   # 프리 패스 아이템 타입 enum
+│       ├── DailyUsageRecord.kt                   # 일일 사용 기록 엔티티
+│       ├── AppGroup.kt                           # 앱 그룹 엔티티
+│       └── AppGroupType.kt                       # 앱 그룹 타입 enum
+│
+└── 🚀 Application
+    └── FaustApplication.kt                        # Application 클래스
 ```
-
-**최적화 포인트:**
-- `CombatStateUpdated`는 큐에 들어가지 않음 (슬롯만 사용)
-- UI 갱신은 시뮬레이션 시간 기준 250ms마다만 발생
-- 배속이 높아도 틱 이벤트 개수 불변 (Timer 주기 고정)
-- `CombatResult`는 우선순위 큐로 즉시 처리
-
-### 인벤토리 → 전투 스탯 변환
-
-```mermaid
-graph TD
-    A[Player + InventorySystem] --> B[EnterCombat 이벤트]
-    B --> C[InventoryAdapter.createPlayerCharacter]
-    C --> D[모든 아이템 추출<br/>슬롯 기반: 모든 아이템이 자동 배치]
-    D --> E[각 아이템의 properties['combat'] 추출]
-    E --> F[시너지 효과 계산]
-    F --> G[모든 스탯 합산]
-    G --> H[CombatStats 생성]
-    H --> I[Character 생성<br/>인컴버런스 패널티 적용]
-    I --> J[전투 시작]
-```
-
-**핵심 개념:**
-- **모든 아이템이 배치 상태**: 슬롯 기반 시스템에서는 모든 아이템이 자동으로 "배치"되어 스탯에 영향 ✅
-- **가방 관리**: 가방 슬롯에 가방을 장착하여 아이템 슬롯과 무게 용량 확보
-- **무게 관리**: 과적 시 전투 능력 저하 (스태미나 회복 감소, 쿨타임 증가)
-- **전투 중 잠금**: 전투 시작 시 인벤토리 조작 불가, 종료 시 해제
 
 ---
 
-## 🧩 모듈 시스템
+## 모듈별 상세 문서
 
-### 모듈 인터페이스
+### 📱 [Presentation Layer](./docs/arch_presentation.md)
 
-```dart
-abstract interface class GameModule {
-  Set<AppPhase> get supportedPhases;      // 지원하는 게임 페이즈
-  Set<Type> get handledEvents;            // 처리하는 이벤트 타입
-  Future<List<GEvent>> handle(GEvent event, GameVM vm);  // 이벤트 처리
-}
-```
+**책임**: UI 컴포넌트 및 사용자 인터랙션 처리
 
-### 주요 모듈
+**주요 컴포넌트**:
+- `MainActivity`: ViewPager2로 Fragment 통합 (MainFragment, ShopFragment, SettingsFragment)
+- `MainFragment`: 차단 앱 목록 및 포인트 표시
+- `ShopFragment`: 프리 패스 아이템 구매 및 사용 UI
+- `SettingsFragment`: 사용자 지정 일일 리셋 시간 설정
+- `MainViewModel`: 데이터 관찰 및 비즈니스 로직 (MVVM)
+- `ShopViewModel`: 상점 데이터 관찰 및 구매/사용 로직 (MVVM)
+- `GuiltyNegotiationOverlay`: 시스템 오버레이로 유죄 협상 화면 표시
+- `PersonaSelectionDialog`: 페르소나 선택 및 등록 해제 다이얼로그
 
-#### 1. CharacterCreationModule
+**핵심 특징**:
+- StateFlow를 통한 반응형 UI 업데이트
+- 데이터베이스 직접 접근 제거로 경량화
+- Persona Module 통합: 능동적 계약 방식 (사용자 입력 검증)
+- ViewPager2를 통한 탭 기반 네비게이션
 
-**파일**: `lib/modules/character_creation/character_creation_module.dart`
-
-**역할**: 게임 시작 시 캐릭터 생성
-
-**처리 이벤트:**
-- `StartGame` → 캐릭터 생성 → `CharacterCreated` 이벤트 발생
-
-#### 2. EncounterModule
-
-**파일**: `lib/modules/encounter/encounter_module.dart`
-
-**역할**: 인카운터 로드 및 대화 진행
-
-**처리 이벤트:**
-- `CharacterCreated` → 시작 인카운터 로드
-- `Next` → 대화 진행
-- `LoadEncounter` → 특정 인카운터 로드
-
-**특징:**
-- `DialogueEngine`을 사용하여 대화 처리
-- 커스텀 이벤트 핸들러 등록 (예: `enterCombat`)
-
-#### 3. CombatModule
-
-**파일**: `lib/modules/combat/combat_module.dart`
-
-**역할**: 전투 시작/종료 처리, 배속/샘플링 관리
-
-**처리 이벤트:**
-- `EnterCombat` → 전투 시작
-- `CombatResult` → 전투 종료 처리
-
-**주요 작업:**
-1. **세션 관리**: 새 sessionId 발급 및 `CombatStateSlot`에 전달
-2. **부모 문맥 주입**: `setParentContext()`로 traceId/parentId/depth 저장
-3. `InventoryAdapter`로 플레이어/적 캐릭터 생성
-4. `CombatEngine` 시작 (재현성용 seed 지원)
-5. 인벤토리 잠금
-6. **배속 관리**: `setSpeed()`로 x1~x5 배속 설정 (dt 스케일링)
-7. **UI 샘플링**: 시뮬레이션 시간 기준 250ms 간격으로 `CombatStateSlot` 업데이트
-8. **예외 처리**: 첫 프레임 즉시 푸시, 마지막 프레임 반영
-9. 전투 종료 시 `dispatchWithContext()`로 문맥 포함 보고
-10. **리소스 정리**: Timer 취소, Slot 종료, 불변조건 검사
-
-#### 4. RewardModule
-
-**파일**: `lib/modules/reward/reward_module.dart`
-
-**역할**: 전투 승리 후 보상 처리
-
-**처리 이벤트:**
-- `EnterReward` → 보상 화면 표시
-- `Next` → 보상 수령 후 다음 인카운터 로드
-
-#### 5. XpModule
-
-**파일**: `lib/modules/xp/xp_module.dart`
-
-**역할**: 경험치 및 마일스톤 처리
-
-**처리 이벤트:**
-- `CharacterCreated` → 초기 XP 설정
-- `EncounterEnded` → XP 증가
-- `SlotOpened` → 마일스톤 체크
-
-#### 6. InventoryInitModule
-
-**파일**: `lib/modules/inventory/inventory_init_module.dart`
-
-**역할**: 게임 시작 시 인벤토리 초기화
-
-**처리 이벤트:**
-- `CharacterCreated` → 시작 아이템 배치
+→ [상세 문서 보기](./docs/arch_presentation.md)
 
 ---
 
-## 🎮 주요 시스템
+### 🧠 [Domain Layer & Persona Module](./docs/arch_domain_persona.md)
 
-### 1. 전투 시스템
+**책임**: 비즈니스 로직과 페르소나 기반 피드백 제공
 
-**위치**: `lib/combat/`, `lib/modules/combat/`
+**주요 컴포넌트**:
+- `PenaltyService`: 페널티 계산 및 적용
+- `WeeklyResetService`: 주간 정산 로직
+- `DailyResetService`: 일일 초기화 로직 (사용자 지정 시간 지원)
+- `FreePassService`: 프리 패스 구매 및 사용 로직 (누진 가격, 쿨타임 관리)
+- `AppGroupService`: 앱 그룹 관리 (SNS/OTT 앱 분류)
+- `ActivePassService`: 활성 패스 추적 및 타이머 관리 (WorkManager 사용, 지속 시간: 도파민 샷 20분, 스탠다드 티켓 1시간, 시네마 패스 4시간)
+- `PersonaEngine`: 피드백 조율 엔진 (Safety Net 로직 포함)
+- `PersonaProvider`: 페르소나 프로필 제공 (랜덤 텍스트 지원)
+- `VisualHandler`, `HapticHandler`, `AudioHandler`: 각 피드백 실행
 
-**특징:**
-- 타이머 기반 (100ms 틱, 고정)
-- **배속 시스템**: dt 스케일링으로 x1~x5 배속 지원 (틱 개수 불변)
-- **UI 샘플링**: 시뮬레이션 시간 기준 250ms 간격으로 UI 갱신 (틱과 분리)
-- **Last-Value 슬롯**: `CombatStateUpdated`는 큐에 들어가지 않고 `CombatStateSlot`으로만 관리
-- **sessionId 관리**: 전투 세션 간 경합/잔상 완전 차단
-- 아이템 효과 실시간 적용
-- 상태 효과 지원
+**핵심 특징**:
+- 기기 상태 기반 피드백 모드 자동 조정 (Safety Net)
+- 능동적 계약 방식: 사용자가 정확히 문구를 입력해야 강행 버튼 활성화
+- 페르소나별 맞춤형 피드백 (시각, 촉각, 청각)
+- 사용자 지정 시간 기준 일일 초기화
+- WorkManager를 통한 백그라운드 타이머 관리
 
-**주요 클래스:**
-- `CombatEngine`: 전투 루프 관리 (`elapsedMs` 제공)
-- `CombatModule`: 전투 모듈 (배속, 샘플링, sessionId 관리)
-- `CombatStateSlot`: Last-Value 슬롯 (UI 직접 구독)
-- `Character`: 전투용 캐릭터
-- `CombatStats`: 전투 스탯 (attackPower, maxHealth, accuracy, defenseRate)
-- `StatusEffect`: 상태 효과
+→ [상세 문서 보기](./docs/arch_domain_persona.md)
 
-**전투 최적화 아키텍처:**
+---
+
+### 💾 [Data Layer](./docs/arch_data.md)
+
+**책임**: 데이터 영속성과 저장소 관리
+
+**주요 컴포넌트**:
+- `FaustDatabase`: Room 데이터베이스 (버전 2, BlockedApp, PointTransaction, FreePassItem, DailyUsageRecord, AppGroup 엔티티)
+- `PointTransactionDao`: 포인트 거래 DAO (Flow 제공)
+- `AppBlockDao`: 차단 앱 DAO
+- `FreePassItemDao`: 프리 패스 아이템 DAO (Flow 제공)
+- `DailyUsageRecordDao`: 일일 사용 기록 DAO (Flow 제공)
+- `AppGroupDao`: 앱 그룹 DAO (Flow 제공)
+- `PreferenceManager`: EncryptedSharedPreferences 관리 (AES256-GCM 암호화)
+- `TimeUtils`: 시간 계산 유틸리티 (사용자 지정 시간 기준 날짜 계산)
+
+**핵심 특징**:
+- 단일 소스 원칙: 포인트는 `PointTransaction`의 `SUM(amount)`로 계산
+- 트랜잭션 보장: 모든 포인트 변경 작업이 원자적으로 처리
+- 보안 강화: EncryptedSharedPreferences로 포인트 조작 방지
+- 반응형 데이터: Flow를 통한 자동 UI 업데이트
+- 사용자 지정 시간 지원: 사용자가 설정한 시간 기준으로 "하루" 정의
+
+→ [상세 문서 보기](./docs/arch_data.md)
+
+---
+
+### ⚡ [핵심 이벤트 정의 및 시퀀스 다이어그램](./docs/arch_events.md)
+
+**책임**: 비즈니스 로직을 트리거하는 주요 이벤트와 시스템 컴포넌트 간 상호작용 설명
+
+**주요 내용**:
+- 앱 차단 플로우 (Event-driven)
+- 포인트 채굴 플로우
+- Persona 피드백 플로우
+- 화면 OFF/ON 감지 및 도주 패널티 플로우
+- 주간 정산 플로우
+- 일일 초기화 플로우 (사용자 지정 시간 기준)
+- 프리 패스 구매/사용 플로우
+- 상태 전이 모델 (ALLOWED ↔ BLOCKED)
+
+**핵심 특징**:
+- 이벤트 기반 감지: AccessibilityService를 통한 실시간 앱 실행 감지
+- 오디오 모니터링: AudioPlaybackCallback을 통한 이벤트 기반 오디오 감지
+- 상태 전이 시스템: 오버레이 중복 발동 방지
+
+→ [상세 문서 보기](./docs/arch_events.md)
+
+---
+
+## 서비스 아키텍처
+
+### 서비스 간 관계도
 
 ```
-Timer.periodic(100ms) → dt 스케일링 (x1~x5)
+┌─────────────────────────────────────────────────────────┐
+│                    MainActivity                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  • 서비스 시작/중지 제어                          │   │
+│  │  • 권한 요청                                      │   │
+│  │  • UI 업데이트                                    │   │
+│  └──────────────────────────────────────────────────┘   │
+└───────────────┬───────────────────┬─────────────────────┘
+                │                   │
+    ┌───────────▼──────────┐  ┌────▼──────────────────┐
+    │ AppBlockingService    │  │ PointMiningService   │
+    │ (AccessibilityService)│  │                      │
+    │                       │  │ • 앱 사용 시간 추적  │
+    │ • 이벤트 기반 감지     │  │ • 포인트 자동 적립    │
+    │ • 오버레이 트리거     │  │                      │
+    └───────────┬──────────┘  └────┬──────────────────┘
+                │                   │
+                │                   │
+    ┌───────────▼───────────────────▼──────────┐
+    │         PenaltyService                   │
+    │  • 강행/철회 페널티 계산 및 적용          │
+    └───────────┬──────────────────────────────┘
+                │
+    ┌───────────▼──────────────────────────────┐
+    │      WeeklyResetService                  │
+    │  • AlarmManager로 주간 정산 스케줄링      │
+    │  • 포인트 몰수 로직                       │
+    └──────────────────────────────────────────┘
+```
+
+### 서비스 생명주기
+
+```
+앱 시작
+  │
+  ├─► MainActivity.onCreate()
+  │     │
+  │     ├─► 권한 확인
+  │     │     │
+  │     │     ├─► 접근성 서비스 권한
+  │     │     └─► Overlay 권한
+  │     │
+  │     └─► 서비스 시작
+  │           │
+  │           ├─► AppBlockingService (시스템 자동 시작)
+  │           │     └─► 이벤트 기반 감지 (TYPE_WINDOW_STATE_CHANGED)
+  │           │
+  │           └─► PointMiningService.startForeground()
+  │                 └─► 주기적 포인트 계산
+  │
+  └─► WeeklyResetService.scheduleWeeklyReset()
+        └─► AlarmManager에 등록
+```
+
+---
+
+## 의존성 그래프
+
+```
+MainActivity
+  ├─► MainViewModel
+  ├─► AppBlockingService
+  ├─► PointMiningService
+  ├─► WeeklyResetService
+  └─► PreferenceManager
+
+MainViewModel
+  ├─► FaustDatabase
+  └─► PreferenceManager
+
+PersonaSelectionDialog
+  └─► PreferenceManager
+
+AppBlockingService
+  ├─► FaustDatabase
+  ├─► GuiltyNegotiationOverlay
+  ├─► PenaltyService
+  └─► PointMiningService (pauseMining/resumeMining)
+
+PointMiningService
+  ├─► FaustDatabase
+  └─► PreferenceManager
+
+GuiltyNegotiationOverlay
+  ├─► PenaltyService
+  └─► PersonaEngine (신규)
+      ├─► PersonaProvider
+      │   └─► PreferenceManager
+      ├─► VisualHandler
+      ├─► HapticHandler
+      │   └─► Vibrator (시스템)
+      └─► AudioHandler
+          ├─► MediaPlayer
+          └─► AudioManager (시스템)
+
+PenaltyService
+  ├─► FaustDatabase
+  └─► PreferenceManager
+
+WeeklyResetService
+  ├─► FaustDatabase
+  └─► PreferenceManager
+```
+
+---
+
+## 데이터 흐름 요약
+
+### 읽기 흐름 (Read Flow)
+```
+UI Component (MainActivity)
+    ↓
+ViewModel (MainViewModel)
+    ↓
+Database Flow (getTotalPointsFlow, getAllBlockedApps)
+    ↓
+ViewModel StateFlow 업데이트
+    ↓
+UI Update (Reactive)
+```
+
+### 쓰기 흐름 (Write Flow)
+```
+User Action / Service Event
+    ↓
+Business Logic (withTransaction)
+    ↓
+PointTransaction 삽입
+    ↓
+현재 포인트 계산 (SUM)
+    ↓
+PreferenceManager 동기화 (호환성, 암호화 저장)
+    ↓
+트랜잭션 커밋 (예외 처리 및 롤백 보장)
+    ↓
+Database Flow 자동 업데이트
+    ↓
+ViewModel StateFlow 업데이트
+    ↓
+UI 반응형 업데이트
+```
+
+---
+
+## 보안 및 권한
+
+### 필수 권한
+1. **BIND_ACCESSIBILITY_SERVICE**: 접근성 서비스를 통한 앱 실행 감지
+2. **SYSTEM_ALERT_WINDOW**: 오버레이 표시
+3. **FOREGROUND_SERVICE**: 백그라운드 서비스 실행 (PointMiningService용)
+4. **QUERY_ALL_PACKAGES**: 설치된 앱 목록 조회
+
+### 보안 강화
+1. **EncryptedSharedPreferences**: 포인트 데이터 암호화 저장
+   - AES256-GCM 암호화
+   - MasterKey 기반 키 관리
+   - 포인트 조작 방지
+2. **트랜잭션 예외 처리**: 모든 DB 트랜잭션에 예외 처리 및 롤백 보장
+3. **동시성 보장**: 모든 포인트 수정 로직이 트랜잭션으로 처리되어 동시 접근 시 데이터 무결성 보장
+
+### 권한 요청 플로우
+```
+MainActivity
   ↓
-CombatEngine.update(scaledDt)
+권한 확인
   ↓
-시뮬레이션 시간 기준 250ms 샘플링
-  ↓
-CombatStateSlot.update() (Last-Value)
-  ↓
-UI 직접 구독 (ListenableBuilder)
+├─► 접근성 서비스 권한 확인
+│     ↓
+│     [없음] → 접근성 설정 화면으로 이동
+│     ↓
+│     [있음] → 다음 권한 확인
+│
+└─► 오버레이 권한 확인
+      ↓
+      [없음] → 오버레이 권한 설정 화면으로 이동
+      ↓
+      [있음] → 서비스 시작
 ```
 
-**핵심 설계:**
-- **틱 이벤트 개수 불변**: 배속이 높아도 Timer 주기 100ms 고정
-- **UI 갱신 분리**: 시뮬레이션 시간 기준 250ms마다만 UI 갱신
-- **백프레셔**: FIFO 큐 대신 최신 1개만 유지 (Last-Value)
-- **종료 후 업데이트 금지**: `markCombatEnded()` 후 모든 업데이트 차단
-- **우선순위 큐**: `CombatResult`/`EnterReward`는 큐 맨 앞에 삽입
-
-### 2. 인벤토리 시스템
-
-**위치**: `lib/inventory/`
-
-**특징:**
-- **3단 계층 구조**: 가방 슬롯 → 가방 → 아이템 슬롯
-- **슬롯 기반**: 가방 슬롯(최대 20개)에 가방을 장착하여 아이템 슬롯 확보
-- **무게 기반**: 각 가방이 무게 보너스를 제공하며, 과적 시 패널티 적용
-- **인컴버런스(과적) 시스템**: 무게 초과 시 4단계 패널티 (정상/불편/위험/붕괴)
-- **시너지 시스템**: 배치된 아이템 간 시너지 효과 계산
-- **전투 중 잠금**: 전투 시작 시 인벤토리 조작 불가
-
-**3단 계층 구조:**
-1. **가방 슬롯 (Bag Slot)**: 가방을 장착하는 슬롯 (최대 20개)
-2. **가방 (Bag)**: 아이템 슬롯을 제공하고 최대 무게를 증가시킴
-   - 기본 가방: 슬롯 1, 아이템 1, 무게 +5
-   - 대형 가방: 슬롯 2, 아이템 2, 무게 +10
-   - 파우치: 슬롯 1, 아이템 1, 무게 +1
-3. **아이템 슬롯 (Item Slot)**: 아이템 1개를 보관
-
-**무게 및 과적 계산:**
-- `currentWeight`: 모든 아이템의 무게 합
-- `maxWeight`: 모든 가방의 무게 보너스 합 (하드캡 54)
-- `overweightPercent`: `(currentWeight - maxWeight) / maxWeight × 100`
-- 과적 단계별 패널티:
-  - 정상 (0%): 스태미나 회복 -0, 쿨타임 계수 1.0
-  - 불편 (0~20%): 스태미나 회복 -0.1, 쿨타임 계수 1.0
-  - 위험 (20~50%): 스태미나 회복 -0.2, 쿨타임 계수 0.8
-  - 붕괴 (50%+): 스태미나 회복 -0.3, 쿨타임 계수 0.6
-
-**주요 클래스:**
-- `InventorySystem`: 메인 시스템 (가방/아이템 관리)
-- `Bag`: 가방 클래스 (아이템 슬롯 제공, 무게 보너스)
-- `BagType`: 가방 종류 enum (basic, large, pouch 등)
-- `SynergySystem`: 시너지 계산
-- `CombatLockSystem`: 전투 중 잠금
-- `EncumbranceTier`: 과적 단계 enum
-
-**인벤토리 → 전투 스탯 변환:**
-- `InventoryAdapter.calculateTotalStats()`: 모든 아이템의 스탯 합산
-- `InventoryAdapter.createPlayerCharacter()`: 플레이어 캐릭터 생성
-- `InventoryAdapter.createEnemyCharacter()`: 적 캐릭터 생성
-- **중요**: 모든 아이템이 자동으로 "배치" 상태이며, 전투 스탯에 반영됨
-
-### 3. 대화 시스템
-
-**위치**: `lib/dialogue/`
-
-**특징:**
-- JSON 기반 대화 데이터
-- 조건부 분기 (스탯, 아이템, 플래그)
-- 커스텀 이벤트 지원 (예: `enterCombat`)
-- 플러그인 시스템
-
-**주요 클래스:**
-- `DialogueEngine`: 대화 엔진 (메인)
-- `DialogueRuntime`: 대화 런타임 상태
-- `DialogueInterpreter`: 대화 인터프리터
-- `DialogueLoader`: 대화 로더
-
-**대화 데이터 구조:**
-```
-assets/dialogue/
-├── start/              # 시작 인카운터
-├── main/               # 메인 스토리
-│   ├── chapter/       # 챕터별 스토리
-│   └── story/         # 스토리 데이터
-├── random/             # 랜덤 인카운터
-│   ├── trap/          # 함정 인카운터
-│   ├── combat/        # 전투 인카운터
-│   └── meeting/       # 만남 인카운터
-└── encounters/         # 인카운터 정의
-```
-
-### 4. 저장/불러오기 시스템
-
-**위치**: `lib/autosave/`, `lib/save_system.dart`
-
-**특징:**
-- 자동 저장 (인카운터 종료 시)
-- JSON 기반 세이브 파일
-- 인벤토리 전체 상태 저장
-- 결정론적 난수 생성기 (재현 가능한 게임)
-
-**주요 클래스:**
-- `AutosaveSystem`: 자동 저장 시스템
-- `SaveSystem`: 저장/불러오기 시스템
-- `DeterministicRNG`: 결정론적 난수 생성기
-
-### 5. XP/레벨링 시스템
-
-**위치**: `lib/core/xp/`, `lib/modules/xp/`
-
-**특징:**
-- 인카운터 기반 경험치
-- 마일스톤 시스템
-- 설정 파일 기반 (`assets/config/xp_config.json`)
-
-**주요 클래스:**
-- `XpModule`: XP 처리 모듈
-- `MilestoneService`: 마일스톤 서비스
+**참고**: 접근성 서비스는 시스템이 자동으로 시작하므로 별도의 서비스 시작 호출이 필요 없습니다.
 
 ---
 
-## 📊 상태 관리
+## 확장성 고려사항
 
-### Provider 패턴
+### 향후 추가 가능한 레이어
+1. **Repository Layer**: 데이터 소스 추상화
+2. **UseCase Layer**: 비즈니스 로직 캡슐화
+3. **Dependency Injection**: Dagger/Hilt 도입
+4. **추가 ViewModel**: 다른 화면에 대한 ViewModel 확장
 
-**사용 위치**: `lib/app/app_wrapper.dart`
-
-**주요 Provider:**
-```dart
-MultiProvider(
-  providers: [
-    ChangeNotifierProvider(create: (context) => AppState()),           // 화면 네비게이션
-    ChangeNotifierProvider<DialogueManager>(...),                       // 대화 관리
-    ChangeNotifierProvider<GameController>(...),                        // 게임 상태/이벤트
-    Provider<InventorySystem>.value(...),                               // 인벤토리 시스템
-  ],
-)
-```
-
-### 상태 접근
-
-```dart
-// GameController 접근
-final gameController = context.read<GameController>();
-final vm = gameController.vm;
-
-// 이벤트 전송
-gameController.dispatch(const StartGame());
-
-// 상태 구독
-Consumer<GameController>(
-  builder: (context, controller, child) {
-    final vm = controller.vm;
-    return Text(vm.text ?? '');
-  },
-)
-```
+### 확장 포인트
+- Standard/Faust Pro 티어 로직
+- **프리 패스 시스템**: 도파민 샷, 스탠다드 티켓, 시네마 패스 구매 및 사용
+  - **도파민 샷**: 15 WP, 재구매 쿨타임 30분, 지속 시간 20분 (SNS 앱 그룹 차단 해제)
+  - **스탠다드 티켓**: 20 WP (기본) + 보유 수량당 10 WP 누진, 재구매 쿨타임 없음, 지속 시간 1시간 (전체 앱 차단 해제, SNS 제외), 하이브리드 쿨타임: 일일 3회 초과 시 1시간
+  - **시네마 패스**: 75 WP, 재구매 쿨타임 18시간, 지속 시간 4시간 (OTT 앱 그룹 차단 해제)
+- **Persona Module 확장**:
+  - 새로운 페르소나 타입 추가 (PersonaType Enum 확장)
+  - 새로운 핸들러 추가 (인터페이스 구현 후 PersonaEngine에 주입)
+  - 오디오 파일 추가 (res/raw에 파일 추가 후 PersonaProfile 업데이트)
+- 다차원 분석 프레임워크 (NDA)
 
 ---
 
-## 🎯 아키텍처 원칙
+## 성능 최적화
 
-### 1. 단일 책임 원칙 (SRP)
+### 현재 구현
+- **이벤트 기반 감지**: `AppBlockingService`가 `AccessibilityService`를 활용하여 앱 실행 이벤트를 실시간 감지
+- **메모리 캐싱**: 차단된 앱 목록을 `HashSet`으로 캐싱하여 DB 조회 제거
+- **Flow 구독**: 변경사항만 감지하여 불필요한 업데이트 방지
+- **반응형 UI**: Room Database의 Flow를 통한 반응형 데이터 업데이트
+- **비동기 처리**: Coroutine을 사용한 비동기 처리
+- **백그라운드 작업**: AccessibilityService로 시스템 레벨 이벤트 감지
 
-- 각 모듈은 하나의 책임만 가짐
-- 예: `CombatModule`은 전투만, `XpModule`은 경험치만
+### 최적화 상세
 
-### 2. 개방-폐쇄 원칙 (OCP)
+#### AppBlockingService 최적화
+- **이전**: Polling 방식 (1초마다 `queryUsageStats()` 호출)
+- **현재**: 
+  - **이벤트 기반 감지**: `AccessibilityService`의 `TYPE_WINDOW_STATE_CHANGED` 이벤트 활용
+  - 서비스 시작 시 1회만 DB 로드
+  - `getAllBlockedApps()` Flow 구독으로 변경사항만 감지
+  - 메모리 캐시 (`ConcurrentHashMap.newKeySet<String>()`)에서 조회
+  - **Polling 루프 완전 제거**
+- **효과**: 
+  - 배터리 소모 대폭 감소 (이벤트 발생 시에만 처리)
+  - 실시간 감지 (앱 실행 즉시 감지)
+  - 시스템 리소스 사용 최소화
 
-- 확장에는 열려있고 수정에는 닫혀있음
-- 새 기능은 새 모듈 추가로 구현
+#### MainActivity UI 최적화
+- **이전**: `while(true)` 루프로 5초마다 포인트 업데이트
+- **현재**: 
+  - `MainViewModel`의 StateFlow를 관찰
+  - 포인트 및 차단 앱 목록 변경 시에만 UI 업데이트
+  - 데이터베이스 직접 접근 제거로 경량화
+- **효과**: 배터리 효율 향상, 불필요한 UI 갱신 제거, 코드 분리로 유지보수성 향상
 
-### 3. 의존성 역전 원칙 (DIP)
+#### GuiltyNegotiationOverlay 하드웨어 가속 최적화
+- **목적**: 오버레이 렌더링 성능 향상 및 리플 애니메이션 부드러운 동작 보장
+- **구현**:
+  - `WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED` 플래그 추가
+  - `PixelFormat.TRANSLUCENT` 유지 (알파 채널 렌더링 시 가속 지원)
+  - `dimAmount = 0.5f` 설정 (하드웨어 가속 시 부드러운 배경 어둡게 처리)
+  - `AndroidManifest.xml`의 `<application>` 태그에 `android:hardwareAccelerated="true"` 명시
+- **효과**: 
+  - "non-hardware accelerated Canvas" 경고 제거
+  - 버튼 클릭 시 리플 애니메이션 부드럽게 동작
+  - 오버레이 UI 반응 속도 향상
+  - GPU 가속을 통한 렌더링 성능 개선
 
-- 모듈은 `GameModule` 인터페이스에 의존
-- `GameController`가 구체적인 모듈을 주입
-
-### 4. 불변성 (Immutability)
-
-- `GameVM`은 불변 객체
-- 모든 상태 변경은 `copyWith()`로 새 인스턴스 생성
-
-### 5. 순수 함수 (Pure Functions)
-
-- `reduce()` 함수는 사이드 이펙트 없음
-- 동일 입력 → 동일 출력 보장
-
----
-
-## 🔍 주요 설계 결정
-
-### 1. 이벤트 기반 아키텍처 선택 이유
-
-- **느슨한 결합**: 모듈 간 직접 의존성 없음
-- **확장성**: 새 기능 추가가 쉬움
-- **테스트 용이**: 이벤트 단위로 테스트 가능
-- **디버깅 용이**: 이벤트 로그로 전체 흐름 추적 가능
-
-### 2. 모듈 패턴 선택 이유
-
-- **관심사 분리**: 기능별로 명확히 분리
-- **재사용성**: 모듈을 다른 프로젝트에서도 사용 가능
-- **테스트 용이**: 모듈 단위로 독립 테스트
-
-### 3. 인벤토리 → 전투 스탯 변환 방식
-
-- **단일 소스 원칙**: 인벤토리가 전투 스탯의 유일한 소스
-- **슬롯 기반 자동 배치**: 모든 아이템이 가방 슬롯에 자동 배치되어 스탯에 반영
-- **무게 제한**: 가방의 무게 보너스 합으로 최대 무게 결정, 과적 시 전투 패널티
-- **전투 중 잠금**: 밸런스 유지 및 성능 최적화
-
-### 4. 대화 시스템 통합
-
-- **DialogueEngine 사용**: 기존 대화 시스템과 통합
-- **커스텀 이벤트**: `enterCombat` 같은 게임 특화 이벤트 지원
-- **플러그인 시스템**: 확장 가능한 구조
+### 개선 가능 영역
+- 데이터베이스 인덱싱
+- 메모리 누수 방지 (Lifecycle-aware 컴포넌트)
+- PointMiningService도 이벤트 기반으로 전환 검토
 
 ---
 
-## 📝 참고 문서
+## 테스트 전략
 
-프로젝트 루트에 추가 문서들이 있습니다:
+### 단위 테스트 대상
+- `PenaltyService`: 페널티 계산 로직
+- `WeeklyResetService`: 정산 로직
+- `TimeUtils`: 시간 계산 유틸리티
+- `PreferenceManager`: 데이터 저장/로드
+- `PersonaEngine`: 피드백 모드 결정 로직 (Safety Net)
+- `PersonaProvider`: 페르소나 프로필 제공
+- `VisualHandler`: 입력 검증 로직
+- `HapticHandler`: 진동 패턴 실행
+- `AudioHandler`: 오디오 재생 및 헤드셋 감지
 
-| 문서 | 설명 |
-|------|------|
-| `CODEBASE_DOCUMENTATION.md` | 코드베이스 전체 분석 문서 |
-| `INVENTORY_COMBAT_STATS_ARCHITECTURE.md` | 인벤토리-전투 스탯 연동 상세 문서 |
-| `INVENTORY_COMBAT_INTEGRATION_COMPLETE.md` | 인벤토리-전투 통합 완료 문서 |
-
----
-
-## 🚀 확장 가이드
-
-### 새 모듈 추가하기
-
-1. `lib/modules/` 아래 새 디렉터리 생성
-2. `GameModule` 인터페이스 구현
-3. `supportedPhases`와 `handledEvents` 정의
-4. `handle()` 메서드 구현
-5. `AppWrapper`에서 `GameController` 생성 시 모듈 추가
-
-### 새 이벤트 추가하기
-
-1. `lib/core/state/events.dart`에 이벤트 클래스 추가
-2. `lib/core/state/reducer.dart`에서 상태 전이 로직 추가
-3. 필요한 모듈에서 이벤트 처리
-
-### 새 화면 추가하기
-
-1. `lib/screens/` 아래 새 화면 생성
-2. `AppScreen` enum에 추가
-3. `AppWrapper._buildCurrentScreen()`에서 라우팅 추가
+### 통합 테스트 대상
+- 서비스 간 통신
+- 데이터베이스 CRUD 작업
+- 권한 요청 플로우
+- Persona Module 통합:
+  - 오버레이 표시 시 피드백 실행
+  - 사용자 입력 검증 및 버튼 활성화
+  - 버튼 클릭 시 피드백 정지
+  - 헤드셋 탈착 시 피드백 모드 전환
+  - Safety Net 로직 (무음 모드, 헤드셋 연결 상태)
 
 ---
 
-**문서 버전**: 1.1.0  
-**최종 업데이트**: 2025-01-11 (Combat Tick 최적화 + 이벤트 시스템 개선)
+## 변경 이력 (Architecture Change Log)
 
-### 주요 변경 사항 (v1.1.0)
+### [2024-12-XX] 유죄 협상 오버레이 즉시 호출 변경
+- **작업**: 차단된 앱 실행 시 유죄 협상 오버레이를 즉시 표시하도록 변경
+- **컴포넌트 영향**: `AppBlockingService.transitionToState()`
+- **변경 사항**:
+  - `DELAY_BEFORE_OVERLAY_MS` 상수 제거 (기존: 4-6초 지연)
+  - `overlayDelayJob` 변수 및 관련 로직 제거
+  - `transitionToState()` 메서드에서 오버레이를 즉시 표시하도록 수정
+- **영향 범위**:
+  - 차단된 앱 실행 시 사용자 경험 개선 (즉각적인 피드백)
+  - 기존 로직 보존: Grace Period, Cool-down, 중복 방지 메커니즘 유지
 
-#### Combat Tick 최적화
-- **Last-Value 슬롯**: `CombatStateUpdated`는 큐에 들어가지 않고 `CombatStateSlot`으로만 관리
-- **UI 샘플링**: 시뮬레이션 시간 기준 250ms 간격으로 UI 갱신 (틱과 분리)
-- **배속 시스템**: dt 스케일링으로 x1~x5 배속 지원 (틱 개수 불변)
-- **sessionId 관리**: 전투 세션 간 경합/잔상 완전 차단
-- **우선순위 큐**: `CombatResult`/`EnterReward`는 큐 맨 앞에 삽입
+### [2026-01-15] 화면 OFF 시 차단 앱 오디오 재생 상태 기록 및 채굴 재개 방지
+- **작업**: 화면을 끌 때 차단 앱에서 음성이 출력되면 채굴을 중지하고, 이 기록을 보관하여 화면을 켤 때 허용된 앱으로 변경되어도 채굴을 재개하지 않도록 구현
+- **컴포넌트 영향**: 
+  - `PreferenceManager`: 화면 OFF 시 차단 앱 오디오 재생 상태 저장/조회 메서드 추가
+  - `PointMiningService`: `isPausedByAudio()` companion 메서드 추가, 오디오 종료 시 플래그 리셋
+  - `AppBlockingService`: 화면 OFF 시 상태 확인 및 저장, ALLOWED 전이 시 조건부 재개
+- **변경 사항**:
+  - `PreferenceManager`에 `wasAudioBlockedOnScreenOff()`, `setAudioBlockedOnScreenOff()` 메서드 추가
+  - `PointMiningService`에 `isPausedByAudio()` companion 메서드 추가
+  - `AppBlockingService.registerScreenOffReceiver()`에서 화면 OFF 시 `isPausedByAudio` 상태 확인 및 저장
+  - `AppBlockingService.transitionToState()`에서 ALLOWED 전이 시 저장된 상태 확인 후 조건부 재개
+  - `PointMiningService.checkBlockedAppAudioFromConfigs()`에서 오디오 종료 시 플래그 리셋
+- **영향 범위**:
+  - 화면 OFF 시 차단 앱 오디오 재생 중이면 채굴 중지 상태를 기록
+  - 화면 ON 후 허용 앱으로 전환되어도 오디오가 종료될 때까지 채굴 재개하지 않음
+  - 오디오 종료 시 자동으로 플래그가 리셋되어 정상적으로 채굴 재개
 
-#### 이벤트 시스템 개선
-- **EventTier**: 이벤트를 User/System/Internal으로 분류
-- **EventEnvelope**: 이벤트 메타데이터 래핑 (traceId, parentId, depth)
-- **EventTimeline**: 최근 100개 이벤트 순환 버퍼 (Internal 제외)
-- **EventGuards**: 런타임 불변조건 검사 (maxDepth, maxEventsPerTrace, 폭주 감지)
-- **CombatMetrics**: 성능 메트릭 수집 및 QA 리그레션 게이트
-- **traceId 체인**: EnterCombat → CombatResult → EnterReward 추적
+### [2026-01-XX] 페르소나 관리 UI 구현
+- **작업**: UI에 페르소나 선택 창을 추가하고, 등록된 페르소나를 사용하며, 등록되지 않았을 때는 모든 페르소나의 프롬프트 텍스트 중 랜덤으로 출력하도록 구현
+- **컴포넌트 영향**:
+  - `PersonaSelectionDialog`: 페르소나 선택 다이얼로그 신규 생성
+  - `PreferenceManager`: `getPersonaTypeString()` 기본값을 빈 문자열로 변경
+  - `PersonaProvider`: 빈 문자열 처리 및 `createRandomProfile()` 메서드 추가
+  - `MainActivity`: 페르소나 선택 버튼 및 `showPersonaDialog()` 메서드 추가
+  - `activity_main.xml`: 페르소나 선택 버튼 추가
+  - `strings.xml`: 페르소나 관련 문자열 리소스 추가
+- **변경 사항**:
+  - `PersonaSelectionDialog.kt` 신규 생성: 모든 페르소나 타입 표시 및 등록 해제 옵션 제공
+  - `PreferenceManager.getPersonaTypeString()`: 기본값을 `"STREET"`에서 `""` (빈 문자열)로 변경
+  - `PersonaProvider.getPersonaType()`: 빈 문자열일 때 `null` 반환하도록 수정
+  - `PersonaProvider.getPersonaProfile()`: `getPersonaType()`가 `null`일 때 `createRandomProfile()` 호출
+  - `PersonaProvider.createRandomProfile()`: 모든 페르소나의 프롬프트 텍스트 중 랜덤 선택
+  - `MainActivity`: `buttonPersona` 변수 추가, `showPersonaDialog()` 메서드 추가
+  - `activity_main.xml`: 페르소나 선택 버튼 추가
+  - `strings.xml`: 페르소나 선택 관련 문자열 리소스 추가
+- **영향 범위**:
+  - 사용자가 페르소나를 선택하거나 등록 해제할 수 있는 UI 제공
+  - 등록되지 않은 경우 모든 페르소나의 프롬프트 텍스트 중 랜덤으로 선택하여 출력
+  - 기존 페르소나 로직 보존: 등록된 페르소나는 기존과 동일하게 동작
 
+### [2026-01-16] PersonaProvider 컴파일 오류 수정
+- **작업**: `getPersonaType()` 메서드의 변수 스코프 문제로 인한 컴파일 오류 수정
+- **컴포넌트 영향**: `PersonaProvider.getPersonaType()`
+- **변경 사항**:
+  - `typeName` 변수를 `try` 블록 밖으로 이동하여 `catch` 블록에서 접근 가능하도록 수정
+  - 변수 스코프 문제 해결로 "Unresolved reference: typeName" 컴파일 오류 해결
+- **영향 범위**:
+  - 컴파일 오류 해결로 빌드 성공
+  - 기존 로직 보존: 예외 처리 및 로깅 기능 유지
 
+### [2026-01-XX] 유죄협상 오버레이 중복 호출 방지
+- **작업**: `TYPE_WINDOW_STATE_CHANGED` 이벤트가 반복 발생하여 유죄협상 오버레이가 중복 호출되는 문제 해결
+- **컴포넌트 영향**: `AppBlockingService.handleAppLaunch()`
+- **변경 사항**:
+  - 중복 호출 방지 메커니즘 추가: `lastHandledPackage`, `lastHandledTime`, `HANDLE_APP_LAUNCH_DEBOUNCE_MS` (500ms)
+  - `handleAppLaunch()` 시작 부분에 디바운스 로직 추가: 500ms 내 같은 패키지에 대한 중복 호출 차단
+  - 마지막 처리 정보를 업데이트하여 중복 호출 방지
+- **영향 범위**:
+  - `TYPE_WINDOW_STATE_CHANGED` 이벤트가 반복 발생해도 같은 패키지는 500ms 내 한 번만 처리
+  - 오버레이 중복 표시 문제 해결
+  - 기존 로직 보존: Cool-down, Grace Period, 상태 전이 시스템 유지
 
+### [2026-01-16] PersonaEngine 오디오 재생으로 인한 유죄협상 반복 호출 방지
+- **작업**: PersonaEngine의 AudioHandler가 재생하는 오디오가 오디오 검사 로직에 의해 차단 앱 오디오로 잘못 감지되어 유죄협상이 반복 호출되는 문제 해결
+- **컴포넌트 영향**: 
+  - `AppBlockingService`: 오버레이 표시 상태 추적을 위한 companion object static 변수 추가
+  - `PointMiningService`: 오버레이 표시 중일 때 오디오 검사 건너뛰기
+- **변경 사항**:
+  - `AppBlockingService` companion object에 `isOverlayActive` static 변수 추가 및 `isOverlayActive()` 메서드 추가
+  - `AppBlockingService.showOverlay()`에서 오버레이 표시 시 `isOverlayActive = true` 설정
+  - `AppBlockingService.hideOverlay()`에서 오버레이 닫힐 때 `isOverlayActive = false` 설정
+  - `PointMiningService.checkBlockedAppAudioFromConfigs()`에서 오버레이 표시 중이면 오디오 검사 건너뛰기
+- **영향 범위**:
+  - PersonaEngine의 AudioHandler가 재생하는 오디오가 오디오 검사에 의해 감지되지 않음
+  - 유죄협상 오버레이 표시 중 PersonaEngine 오디오 재생으로 인한 반복 호출 문제 해결
+  - 기존 오디오 검사 로직 보존: 차단 앱 오디오 감지 기능은 정상 작동
 
+### [2026-01-XX] PersonaEngine 오디오 정지 타이밍 안전성 개선
+- **작업**: 오버레이가 닫힐 때 PersonaEngine 오디오가 완전히 정지된 후 오디오 검사를 재개하도록 개선
+- **컴포넌트 영향**: 
+  - `AppBlockingService.hideOverlay()`: PersonaEngine 오디오 정지 완료 대기 로직 추가
+- **변경 사항**:
+  - `DELAY_AFTER_PERSONA_AUDIO_STOP_MS` 상수 추가 (150ms)
+  - `hideOverlay()`에서 `dismiss()` 호출 후 150ms 지연 후 `isOverlayActive = false` 설정
+  - 시스템 오디오 콜백의 지연을 고려한 안전 지연
+- **영향 범위**:
+  - 오버레이가 닫힌 직후 발생하는 오디오 콜백에서 PersonaEngine 오디오가 차단 앱 오디오로 오인식되는 것을 방지
+  - 오디오 검사 재개 시점이 PersonaEngine 오디오 정지 완료 후로 보장됨
+  - 사용자 경험에 미치는 영향 최소화 (150ms 지연)
 
+### [2026-01-XX] 오디오 모니터링 이벤트 기반 명확화
+- **작업**: 아키텍처 문서에서 "10초마다" 주기적 검사 설명 제거, 오디오 상태 변경 시 한 번만 검사한다는 것을 명확히 설명
+- **컴포넌트 영향**: 
+  - `ARCHITECTURE.md`: 오디오 모니터링 설명 수정
+- **변경 사항**:
+  - "10초마다" 주기적 검사 설명 제거
+  - 오디오 상태 변경 시 한 번만 검사한다는 것을 명확히 설명
+  - 검사 결과를 저장하여 포인트 채굴 여부를 결정한다는 것을 명확히 설명
+  - 이벤트 처리 로직 설명 강화
+- **영향 범위**:
+  - 아키텍처 문서의 정확성 향상
+  - 기존 코드 로직은 이미 이벤트 기반으로 구현되어 있음 (변경 없음)
 
+### [2026-01-XX] Grace Period 중복 징벌 방지 강화
+- **작업**: 강행 버튼 클릭 후 화면 OFF → ON 시나리오에서 유죄협상이 다시 발생하는 중복 징벌 문제 해결
+- **컴포넌트 영향**: 
+  - `AppBlockingService.handleAppLaunch()`: Grace Period 우선 체크 추가
+- **변경 사항**:
+  - `handleAppLaunch()`에서 차단 앱 감지 후 Grace Period 체크를 Cool-down 체크보다 먼저 수행
+  - `lastAllowedPackage`가 설정되어 있고 현재 패키지와 일치하면 오버레이 표시 차단
+  - `transitionToState(BLOCKED, ..., triggerOverlay = false)` 호출하여 채굴은 중단하되 오버레이는 표시하지 않음
+  - 화면 재개 시나리오를 포함한 모든 경로에서 중복 징벌 방지
+- **영향 범위**:
+  - 강행 버튼 클릭 후 화면 OFF → ON 시나리오에서 중복 징벌 방지
+  - Grace Period 활성화 시 오버레이만 표시하지 않으며, 채굴 중단 및 상태 전이는 정상 작동
+  - 다른 검사 로직(Cool-down, 오디오 차단 등) 및 포인트 채굴 재개 로직에 영향 없음
 
+### [2026-01-XX] 철회 버튼 클릭 후 빠른 앱 재실행 시 유죄협상 미호출 문제 해결
+- **작업**: 철회 버튼 클릭 후 빠르게 차단 앱을 실행했을 때 유죄협상이 호출되지 않는 현상 해결
+- **원인 분석**:
+  - 참조 불일치: `hideOverlay()`가 비동기로 실행되어 `currentOverlay = null` 설정이 지연됨
+  - 재생성 방해: `handleAppLaunch()`에서 `currentOverlay != null`만 체크하여 닫는 중 상태를 고려하지 않음
+  - 이벤트 지연: 비동기 작업 완료 전 재실행 시 타이밍 이슈 발생
+- **컴포넌트 영향**: 
+  - `AppBlockingService.hideOverlay()`: 참조 백업 후 즉시 상태 동기화
+  - `AppBlockingService.handleAppLaunch()`: `isOverlayDismissing` 체크 추가
+- **변경 사항**:
+  - `hideOverlay()`에서 오버레이 참조를 백업한 후 즉시 `currentOverlay = null`, `isOverlayDismissing = true` 설정
+  - 비동기 블록에서 백업한 참조로 `dismiss()` 호출하여 리소스 정리 보장
+  - `handleAppLaunch()`에서 `currentOverlay != null || isOverlayDismissing` 체크로 `showOverlay()`와 동일한 조건 통일
+  - 상태 동기화를 즉시 수행하여 빠른 재실행 시나리오에서도 정상 작동
+- **영향 범위**:
+  - 철회 버튼 클릭 후 빠르게 앱을 재실행해도 유죄협상이 정상 호출됨
+  - PersonaEngine 오디오 정지 로직 보존: `isOverlayActive`는 기존 로직대로 PersonaEngine 오디오 정지 완료 후 해제
+  - 리소스 정리 보장: 백업한 참조로 `dismiss()` 정상 호출하여 메모리 누수 방지
+  - 기존 로직 보존: Cool-down, Grace Period, 중복 방지 메커니즘 모두 유지
 
+### [2026-01-XX] Cool-down 및 중복 호출 방지 로직 최적화
+- **작업**: 철회 버튼 클릭 후 빠른 앱 재실행 시 Cool-down과 중복 호출 방지 로직에 의해 오버레이가 차단되는 문제 해결
+- **원인 분석**:
+  - Cool-down 로직: 철회 버튼 클릭 시 `navigateToHome()`에서 1초 쿨다운 설정하여 의도적 재실행도 차단
+  - 중복 호출 방지 로직: 500ms 내 동일 패키지 재호출 차단으로 빠른 재실행 시나리오에서 문제 발생
+  - 체크 순서 문제: 중복 호출 방지가 먼저 실행되어 중요한 체크(Grace Period, Cool-down)보다 우선 적용
+- **컴포넌트 영향**: 
+  - `AppBlockingService.navigateToHome()`: `applyCooldown` 파라미터 추가
+  - `AppBlockingService.hideOverlay()`: `applyCooldown` 파라미터 추가
+  - `GuiltyNegotiationOverlay.onCancel()`: `applyCooldown=false` 전달
+  - `AppBlockingService.handleAppLaunch()`: 체크 순서 재배치 및 중복 호출 방지 시간 단축
+- **변경 사항**:
+  - `navigateToHome()`에 `applyCooldown` 파라미터 추가 (기본값: true)
+  - `hideOverlay()`에 `applyCooldown` 파라미터 추가 (기본값: true)
+  - `GuiltyNegotiationOverlay.onCancel()`에서 `hideOverlay(shouldGoHome=true, applyCooldown=false)` 호출
+  - 철회 버튼 클릭 시 쿨다운 면제하여 의도적 재실행 허용
+  - `HANDLE_APP_LAUNCH_DEBOUNCE_MS`를 500ms → 200ms로 단축
+  - `handleAppLaunch()` 체크 순서 재배치: 오버레이 상태 → Grace Period → Cool-down → 중복 호출 방지
+  - 중요한 체크를 먼저 수행하고, 중복 호출 방지는 마지막에 적용하여 빠른 재실행 허용
+- **영향 범위**:
+  - 철회 버튼 클릭 후 빠르게 앱을 재실행해도 쿨다운 없이 즉시 오버레이 표시
+  - 화면 OFF 도주 감지 시에는 기존대로 쿨다운 적용 (의도적 재실행이 아님)
+  - 시스템 이벤트 중복은 여전히 차단 (200ms 내 중복 호출 방지)
+  - 실수로 다시 실행하는 경우는 쿨다운으로 보호 (자연스러운 홈 이동 시)
+  - 기존 로직 보존: Grace Period, Cool-down(자연스러운 홈 이동 시), 중복 방지 메커니즘 모두 유지
 
+### [2026-01-XX] Window ID 검사 + 상태 머신 패턴으로 중복 호출 문제 근본 해결
+- **작업**: 시스템 이벤트 중복과 사용자 의도적 재실행을 구분할 수 없는 근본 문제 해결
+- **원인 분석**:
+  - 시간 기반 디바운싱의 한계: 시스템 이벤트 중복과 사용자 의도적 재실행을 구분 불가
+  - 상태 동기화 문제: `isOverlayDismissing` 플래그로 인한 빠른 재실행 차단
+  - 참조 불일치: 오버레이 닫힘 완료 시점 불명확
+- **컴포넌트 영향**: 
+  - `AppBlockingService.onAccessibilityEvent()`: Window ID 검사 + 코루틴 Throttling 추가
+  - `AppBlockingService`: `OverlayState` enum 추가 (상태 머신 패턴)
+  - `AppBlockingService.showOverlay()`: 상태 머신 기반으로 수정
+  - `AppBlockingService.hideOverlay()`: 상태 머신 기반으로 수정
+  - `GuiltyNegotiationOverlay`: `OverlayDismissCallback` 인터페이스 추가
+- **변경 사항**:
+  - **Window ID 검사**: `event.windowId`로 실제 창 전환만 감지 (화면 내부 변화 제외)
+  - **클래스 이름 검증**: `event.className`으로 Activity/Dialog만 처리 (Toast, Notification 제외)
+  - **코루틴 Throttling**: 300ms 지연으로 연속 이벤트를 마지막 것만 처리
+  - **상태 머신 패턴**: `OverlayState` enum (IDLE, SHOWING, DISMISSING)으로 오버레이 생명주기 관리
+  - **콜백 패턴 강화**: `OverlayDismissCallback`으로 오버레이 닫힘 완료 시점 명확화
+  - **상태 전이 제어**: DISMISSING 상태일 때는 어떤 앱 실행 이벤트도 무시
+  - **예외 처리 강화**: try-catch-finally로 상태 머신 데드락 방지
+- **영향 범위**:
+  - 시스템 이벤트 중복 완전 차단: Window ID로 실제 창 전환만 감지
+  - 빠른 재실행 시나리오 정상 작동: 상태 머신으로 DISMISSING 중 재생성 차단
+  - 상태 동기화 문제 해결: 상태 머신으로 명확한 상태 전이 관리
+  - 철회 후 즉시 재실행 정상 작동: DISMISSING → IDLE 전이 후 즉시 허용
+  - 기존 로직 보존: Grace Period, Cool-down, PersonaEngine 오디오 정지 로직 모두 유지
+  - 시간 기반 중복 호출 방지 로직 제거: Window ID + Throttling이 주 방어선
 
+### [2026-01-XX] Window ID 기억 리셋 및 특별 처리로 재진입 차단 문제 해결
+- **작업**: Window ID가 -1(UNDEFINED)인 경우 오버레이 닫힘 후에도 재진입이 차단되는 문제 해결
+- **원인 분석**:
+  - Window ID 기억 유지: 오버레이가 닫혀도 `lastWindowId`와 `lastProcessedPackage`가 리셋되지 않음
+  - Window ID -1 문제: 일부 앱(유튜브 등)이 Window ID를 -1로 보고하여 같은 패키지 재실행 시 계속 무시됨
+  - className 필터 엄격: `FrameLayout` 등 일반 뷰로 이벤트 발생 시 무시되어 실제 창 전환도 처리되지 않음
+- **컴포넌트 영향**: 
+  - `AppBlockingService.onAccessibilityEvent()`: Window ID -1 특별 처리 및 className 필터 완화
+  - `AppBlockingService.hideOverlay()`: Window ID 기억 리셋 추가
+- **변경 사항**:
+  - **Window ID 기억 리셋**: `hideOverlay()`에서 오버레이 닫힘 완료 시 `lastWindowId=-1`, `lastProcessedPackage=null`로 리셋
+  - **Window ID -1 특별 처리**: Window ID가 -1인 경우 오버레이 상태를 확인하여 IDLE 상태면 처리 허용
+  - **className 필터 완화**: Window ID가 유효한 경우 `Layout` 클래스도 허용 (FrameLayout, LinearLayout 등)
+  - **조건부 필터링**: Window ID가 -1이면 Activity/Dialog만 허용 (더 엄격), 유효하면 Layout도 허용 (더 관대)
+- **영향 범위**:
+  - Window ID -1 앱에서도 오버레이 닫힘 후 재진입 정상 작동
+  - FrameLayout 등 일반 뷰로 이벤트 발생하는 앱에서도 오버레이 정상 표시
+  - 오버레이 닫힘 시 Window ID 기억이 리셋되어 빠른 재실행 시나리오 정상 작동
+  - 기존 로직 보존: Window ID 검사, Throttling, 상태 머신 패턴 모두 유지
 
+### [2026-01-XX] 프리 패스 시스템 구현
+- **작업**: 도파민 샷, 스탠다드 티켓, 시네마 패스 구매 및 사용 시스템 구현
+- **컴포넌트 영향**:
+  - 데이터 레이어: FreePassItem, DailyUsageRecord, AppGroup 엔티티 및 DAO 추가
+  - 도메인 레이어: FreePassService, DailyResetService, AppGroupService, ActivePassService 추가
+  - 프레젠테이션 레이어: ShopFragment, SettingsFragment, ShopViewModel 추가
+  - 서비스 레이어: AppBlockingService에 프리 패스 활성화 체크 추가
+- **변경 사항**:
+  - FaustDatabase 버전 1 → 2 업그레이드 (Migration 스크립트 작성)
+  - TimeUtils 확장: 사용자 지정 시간 기준 날짜 계산 유틸리티 추가
+  - PreferenceManager 확장: 사용자 지정 리셋 시간, 활성 패스 정보 저장/조회
+  - MainActivity를 ViewPager2로 변경하여 Fragment 통합 (MainFragment, ShopFragment, SettingsFragment)
+  - AppBlockingService에 프리 패스 활성화 시 차단 해제 로직 추가
+  - WorkManager를 통한 백그라운드 타이머 관리
+- **영향 범위**:
+  - 사용자가 프리 패스를 구매하고 사용하여 일시적으로 앱 차단을 해제할 수 있음
+  - 사용자 지정 시간 기준으로 일일 초기화 수행 (기본값: 00:00)
+  - 기존 로직 보존: Zero-deletion Policy 준수
 
+### [2026-01-XX] 상태 전이 즉시화로 빠른 재실행 문제 근본 해결
+- **작업**: 오버레이 닫힘 후 빠른 재실행 시 상태 전이 지연과 Throttling 지연의 누적으로 인한 차단 문제 해결
+- **원인 분석**:
+  - 상태 전이 지연: `hideOverlay()`에서 `overlayState = IDLE` 전환이 비동기 블록의 여러 delay 후에 발생 (총 약 400ms)
+  - Throttling 지연: `onAccessibilityEvent()`에서 300ms 지연으로 연속 이벤트 처리
+  - 누적 차단 시간: 최대 약 700ms 동안 재진입 차단
+  - className 필터 엄격: Window ID가 -1일 때 Layout을 제외하여 FrameLayout 이벤트 무시
+- **컴포넌트 영향**: 
+  - `AppBlockingService.hideOverlay()`: 상태 전이 즉시화 및 Window ID 기억 즉시 리셋
+  - `AppBlockingService.onAccessibilityEvent()`: className 필터 완화 (Layout 항상 허용)
+- **변경 사항**:
+  - **상태 전이 즉시화**: `hideOverlay()`에서 `overlayState = IDLE`을 즉시 설정 (비동기 작업 완료 대기하지 않음)
+  - **Window ID 기억 즉시 리셋**: `lastWindowId=-1`, `lastProcessedPackage=null`을 즉시 리셋하여 재진입 허용
+  - **중복 호출 체크 제거**: `overlayState == DISMISSING` 체크 제거 (즉시 IDLE로 전환하므로 불필요)
+  - **className 필터 완화**: Layout을 항상 허용 (Window ID와 무관하게 FrameLayout, LinearLayout 등 처리)
+  - **리소스 정리 분리**: 오버레이 닫기 로직은 비동기 블록에서 리소스 정리만 수행 (상태는 이미 IDLE)
+- **영향 범위**:
+  - 오버레이 닫힘 후 즉시 재진입 허용 (상태 전이 지연 제거)
+  - FrameLayout 이벤트 정상 처리 (유튜브 등에서 정상 작동)
+  - 빠른 재실행 시나리오에서도 정상 작동 (Throttling 지연만 존재, 상태 전이 지연 없음)
+  - 기존 로직 보존: PersonaEngine 오디오 정지 로직, 홈 이동 지연 로직 모두 유지
+  - 리소스 정리 보장: 백업한 참조로 `dismiss()` 호출하여 리소스 정리 보장
 
+### [2026-01-XX] 홈 런처 감지로 홈 이동 후 상태 동기화 보장 (강제 상태 초기화 제거)
+- **작업**: 홈으로 이동할 때 홈 런처 패키지를 감지하여 상태를 `ALLOWED`로 전이하도록 변경 (강제 상태 초기화 제거)
+- **원인 분석**:
+  - 강제 상태 초기화의 타이밍 문제: `navigateToHome()` 직후 즉시 상태 전이로 인해 홈 이동이 완료되기 전에 유튜브 앱이 여전히 활성 상태
+  - 중복 호출: 홈 이동 완료 전에 유튜브 앱이 다시 감지되어 `ALLOWED → BLOCKED` 전이 및 오버레이 재표시
+  - 홈 런처 패키지 불확실성: 런처마다 패키지명이 다르고, 이벤트가 발생하지 않을 수 있음
+- **컴포넌트 영향**: 
+  - `AppBlockingService.hideOverlay()`: 강제 상태 초기화 로직 제거
+  - `AppBlockingService`: 홈 런처 패키지 목록 초기화 및 감지 로직 추가
+  - `AppBlockingService.handleAppLaunch()`: 홈 런처 감지 로직 추가
+- **변경 사항**:
+  - **강제 상태 초기화 제거**: `hideOverlay()`에서 `navigateToHome()` 호출 직후 상태 전이 제거
+  - **홈 런처 패키지 초기화**: `initializeHomeLauncherPackages()` 추가 - `PackageManager.queryIntentActivities()`로 `CATEGORY_HOME` Intent를 처리할 수 있는 모든 앱을 찾아 저장
+  - **홈 런처 이벤트 필터링 우회**: `onAccessibilityEvent()`에서 홈 런처 패키지는 className 필터링을 우회하여 Flow로 전송 보장 (런처마다 className이 다를 수 있음)
+  - **홈 런처 감지**: `handleAppLaunch()`에서 홈 런처 패키지가 감지되면 상태를 `ALLOWED`로 전이
+  - 홈 화면 이벤트가 실제로 발생했을 때만 상태를 전이하여 중복 호출 방지
+  - 홈 화면 이벤트가 지연되거나 누락되어도 홈 런처 감지로 상태가 올바르게 유지됨
+- **영향 범위**:
+  - 홈 이동 후 홈 런처가 실제로 감지되었을 때만 상태가 `ALLOWED`로 전이되어 중복 호출 방지
+  - 홈 이동 완료 전 유튜브 앱 재감지 문제 해결
+  - 이벤트 지연/누락 시나리오에서도 홈 런처 감지로 상태 일관성 유지
+  - 기존 로직 보존: `transitionToState()`의 중복 전이 방지 및 오디오 상태 확인 로직 모두 유지
+- **추가 수정 (2026-01-XX)**: 같은 제한 앱 반복 실행 시나리오 대응
+  - **문제**: 같은 제한 앱을 반복 실행(a실행 → 철회 → a실행 → 철회 → a실행) 시 Window ID 중복 체크로 이벤트가 Flow로 전송되지 않아 유죄협상이 호출되지 않음
+  - **해결**: Window ID 중복 체크 완화 - 오버레이가 닫힌 후(IDLE)에는 같은 앱 재실행 허용
+  - **방어막 유지**: 기존 방어막(Grace Period, Cool-down)이 `handleAppLaunch()`에서 정상 작동하여 중복 호출 방지
+  - **결과**: 짧은 시간 내 반복 실행해도 유죄협상이 정상 호출됨 (철회 시 `applyCooldown=false`로 쿨다운 면제)
+- **추가 수정 (2026-01-XX)**: 홈 런처에서 다른 앱으로 빠르게 전환하는 경우 불일치 체크 우회
+  - **문제**: 홈 이동 후 빠르게 제한 앱 실행 시 `latestActivePackage` 불일치로 이벤트가 무시됨
+  - **해결**: 홈 런처에서 다른 앱으로 전환하는 경우는 불일치 체크를 우회하여 제한 앱 이벤트 처리 보장
+- **추가 수정 (2026-01-18)**: 쿨다운 변수 스레드 안전성 및 정합성 개선
+  - **문제**: 철회 버튼 클릭 후 같은 차단 앱 재실행 시 오버레이가 표시되지 않음
+    - 쿨다운 변수(`lastHomeNavigationPackage`, `lastHomeNavigationTime`)가 `@Volatile` 없이 선언되어 스레드 안전성 문제
+    - `applyCooldown=false`일 때 쿨다운 변수가 리셋되지 않아 이전 값이 남아있음
+  - **해결**:
+    - 쿨다운 변수에 `@Volatile` 어노테이션 추가로 스레드 안전성 보장
+    - `navigateToHome()`에서 `applyCooldown=false`일 때 쿨다운 변수를 명시적으로 리셋
+    - 쿨다운 체크 로직에 상세 로그 추가 (경과 시간, 쿨다운 만료 여부)
+  - **영향 범위**:
+    - 철회 버튼 클릭 후 같은 차단 앱 재실행 시 오버레이가 정상적으로 표시됨
+    - 다중 스레드 환경에서 쿨다운 변수 접근 시 가시성 보장
+    - 디버깅 용이성 향상 (상세 로그)
+- **추가 수정 (2026-01-18)**: 오버레이 FrameLayout 이벤트 필터링
+  - **문제**: 오버레이가 표시된 후 FrameLayout 이벤트가 Flow로 전송되어 불필요한 체크 발생
+    - 오버레이의 FrameLayout이 `TYPE_WINDOW_STATE_CHANGED` 이벤트를 발생시켜 Flow로 전송됨
+    - debounce 후 처리 시 `currentOverlay != null`이어서 "오버레이 이미 표시 중" 로그 발생
+  - **해결**:
+    - `onAccessibilityEvent()`에서 오버레이 패키지(`com.faust`)의 FrameLayout 이벤트를 사전 필터링
+    - 필터링 1과 2 사이에 오버레이 패키지 필터링 추가
+  - **영향 범위**:
+    - 오버레이 표시 후 불필요한 이벤트 처리 제거
+    - Flow 처리 부하 감소
+    - 로그 노이즈 감소
+- **추가 수정 (2026-01-18)**: 스레드 안전성 개선 - 공유 변수에 @Volatile 추가
+  - **문제**: 여러 스레드에서 접근하는 공유 변수에 `@Volatile`이 없어 가시성 문제 발생 가능
+    - `onAccessibilityEvent()`는 메인 스레드에서 실행
+    - `hideOverlay()`, `showOverlay()`는 `Dispatchers.Main`에서 실행
+    - `collectLatest`, `handleAppLaunch()`는 `Dispatchers.Default`에서 실행
+    - 엄격 모드 빌드에서 가시성 문제로 인한 중복 호출 가능
+  - **해결**:
+    - 모든 공유 변수에 `@Volatile` 어노테이션 추가
+      - `currentOverlay`: 오버레이 인스턴스 참조
+      - `lastWindowId`, `lastProcessedPackage`: Window ID 기반 중복 호출 방지
+      - `lastAllowedPackage`: Grace Period 체크
+      - `currentBlockedPackage`, `currentBlockedAppName`: 현재 협상 중인 앱 정보
+    - 기존 `@Volatile` 변수와 일관성 유지
+      - `overlayState`, `latestActivePackage`, `lastHomeNavigationPackage`, `lastHomeNavigationTime`
+  - **영향 범위**:
+    - 유죄협상 중복 호출 방지 메커니즘의 정합성 보장
+    - 멀티스레드 환경에서 변수 가시성 보장
+    - 엄격 모드 빌드에서도 안전하게 동작
+    - 경쟁 조건으로 인한 중복 오버레이 표시 방지
 
+---
 
+## 결론
 
+Faust는 **명확한 계층 분리**와 **단일 책임 원칙**을 따르는 구조로 설계되었습니다. 각 컴포넌트는 독립적으로 테스트 가능하며, 향후 기능 확장이 용이한 아키텍처입니다.
 
-
+**상세 내용은 각 모듈별 문서를 참조하세요:**
+- [Presentation Layer](./docs/arch_presentation.md)
+- [Domain Layer & Persona Module](./docs/arch_domain_persona.md)
+- [Data Layer](./docs/arch_data.md)
+- [핵심 이벤트 정의](./docs/arch_events.md)

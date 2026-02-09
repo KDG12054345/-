@@ -18,9 +18,12 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
@@ -28,17 +31,21 @@ import com.faust.R
 import com.faust.data.utils.PreferenceManager
 import com.faust.domain.AppGroupService
 import com.faust.domain.DailyResetService
+import com.faust.domain.TimeCreditService
 import com.faust.domain.WeeklyResetService
 import com.faust.models.BlockedApp
+import com.faust.utils.AppLog
 import com.faust.presentation.view.AppSelectionDialog
 import com.faust.presentation.view.BlockedAppAdapter
 import com.faust.presentation.view.PersonaSelectionDialog
 import com.faust.presentation.viewmodel.MainViewModel
 import com.faust.services.AppBlockingService
-import com.faust.services.PointMiningService
+import com.faust.services.TimeCreditBackgroundService
+import androidx.work.WorkManager
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -152,6 +159,34 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Failed to initialize app groups", e)
             }
         }
+
+        // Time Credit 실시간 정산: 앱이 포그라운드(override on top)일 때 60초마다 정산하여 잔액 갱신
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                runSettlementInForeground()
+                while (true) {
+                    delay(60_000L)
+                    runSettlementInForeground()
+                }
+            }
+        }
+
+        // [M-2] 기존 FreePass WorkManager 작업 정리 (PassExpirationWorker 취소)
+        try {
+            WorkManager.getInstance(this).cancelAllWorkByTag("pass_expiration")
+            Log.d(TAG, "PassExpirationWorker 정리 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to cancel pass_expiration workers", e)
+        }
+    }
+
+    override fun onDestroy() {
+        try {
+            preferenceManager.persistTimeCreditValues(synchronous = true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist time credit on exit", e)
+        }
+        super.onDestroy()
     }
 
     private fun setupToolbar() {
@@ -177,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
             tab.text = when (position) {
                 0 -> getString(R.string.app_name) // "Faust" 또는 "홈"
-                1 -> getString(R.string.shop_title)
+                1 -> "타임크레딧"
                 2 -> getString(R.string.settings_title)
                 else -> null
             }
@@ -264,6 +299,67 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 시스템 알림이 꺼져 있으면 다이얼로그로 안내하고, [설정으로 이동] 시 앱 알림 설정 화면을 엽니다.
+     * Grace Period 등 앱 차단 알림을 받으려면 알림이 켜져 있어야 합니다.
+     */
+    private fun checkNotificationPermissionAndPrompt() {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+            val dialogShownKey = "notification_disabled_dialog_shown"
+            val prefs = getSharedPreferences("faust_notification_prompt", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(dialogShownKey, false)) {
+                prefs.edit().putBoolean(dialogShownKey, true).apply()
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.notification_disabled_title))
+                    .setMessage(getString(R.string.notification_disabled_message))
+                    .setPositiveButton(getString(R.string.go_to_settings)) { _, _ ->
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            }
+                            startActivity(intent)
+                        } else {
+                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.parse("package:$packageName")
+                            })
+                        }
+                    }
+                    .setNegativeButton(getString(R.string.later), null)
+                    .show()
+            }
+        }
+    }
+
+    /**
+     * 알림 액세스(NotificationListenerService) 허용 여부를 확인합니다.
+     * MediaSessionManager.getActiveSessions()로 정밀 오디오 감지를 위해 필요합니다.
+     */
+    private fun isNotificationListenerEnabled(): Boolean {
+        return NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+    }
+
+    /**
+     * 알림 액세스가 꺼져 있으면 한 번만 다이얼로그로 안내하고, [설정으로 이동] 시 알림 액세스 설정 화면을 엽니다.
+     */
+    private fun checkNotificationAccessAndPrompt() {
+        if (isNotificationListenerEnabled()) return
+        val prefs = getSharedPreferences("faust_notification_access_prompt", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("notification_access_dialog_shown", false)) return
+        prefs.edit().putBoolean("notification_access_dialog_shown", true).apply()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.notification_access_required_title))
+            .setMessage(getString(R.string.notification_access_required_message, getString(R.string.app_name)))
+            .setPositiveButton(getString(R.string.go_to_settings)) { _, _ ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                } else {
+                    startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                }
+            }
+            .setNegativeButton(getString(R.string.later), null)
+            .show()
+    }
+
     private fun checkAccessibilityService(): Boolean {
         return AppBlockingService.isServiceEnabled(this)
     }
@@ -345,7 +441,7 @@ class MainActivity : AppCompatActivity() {
     private fun startServices() {
         if (checkAllPermissions()) {
             // 접근성 서비스는 시스템이 자동으로 시작하므로 별도 시작 불필요
-            PointMiningService.startService(this)
+            TimeCreditBackgroundService.startService(this)
             Toast.makeText(this, getString(R.string.service_started), Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, getString(R.string.all_permissions_required), Toast.LENGTH_SHORT).show()
@@ -354,10 +450,17 @@ class MainActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
-        
+        Log.i(TAG, "${AppLog.LIFECYCLE} user returned to app → foreground, running permission/settlement checks")
+
         // 권한 재확인 및 버튼 활성화 상태 업데이트
         updateServiceButtonState()
-        
+
+        // 알림 권한 확인: 비활성화 시 Grace Period 등 앱 차단 알림을 받을 수 없음을 안내
+        checkNotificationPermissionAndPrompt()
+
+        // 알림 액세스(Notification Listener) 확인: 미허용 시 정밀 오디오 감지 안내
+        checkNotificationAccessAndPrompt()
+
         // 모든 권한이 활성화되었는지 확인
         if (checkAccessibilityService() && checkOverlayPermission()) {
             // 배터리 최적화 제외도 확인 (선택사항이지만 권장)
@@ -370,11 +473,11 @@ class MainActivity : AppCompatActivity() {
                     checkBatteryOptimization()
                 } else {
                     // 이미 안내했으면 서비스는 시작
-                    PointMiningService.startService(this)
+                    TimeCreditBackgroundService.startService(this)
                 }
             } else {
                 // 모든 권한이 활성화되었으면 서비스 시작
-                PointMiningService.startService(this)
+                TimeCreditBackgroundService.startService(this)
             }
         }
         
@@ -388,7 +491,34 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    override fun onPause() {
+        super.onPause()
+        Log.i(TAG, "${AppLog.LIFECYCLE} activity leaving foreground (user left or dialog) → background")
+    }
     
+    /**
+     * 앱이 포그라운드일 때 Time Credit 정산을 실행합니다.
+     * repeatOnLifecycle(STARTED) 내에서 호출되며, 앱이 화면에 보이는 동안 60초마다 실행되어 실시간 잔액 갱신을 합니다.
+     */
+    private fun runSettlementInForeground() {
+        try {
+            val timeCreditService = TimeCreditService(this)
+            val result = timeCreditService.settleCredits()
+            if (result.earnedSeconds > 0L) {
+                Log.i(TAG, "${AppLog.CREDIT} foreground settlement → earned +${result.earnedSeconds}s (balance: ${result.newBalanceSeconds}s)")
+                val earnedText = if (result.earnedSeconds >= 60) "${result.earnedSeconds / 60}분" else "${result.earnedSeconds}초"
+                Toast.makeText(
+                    this,
+                    "당신의 인내로 ${earnedText}의 자유를 얻었습니다",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "${AppLog.CREDIT} foreground settlement failed → exception", e)
+        }
+    }
+
     /**
      * 서비스 시작 버튼의 활성화 상태를 권한에 따라 업데이트합니다.
      */
@@ -431,7 +561,7 @@ class MainPagerAdapter(fragmentActivity: FragmentActivity) : FragmentStateAdapte
     override fun createFragment(position: Int): Fragment {
         return when (position) {
             0 -> MainFragment()
-            1 -> ShopFragment()
+            1 -> CreditFragment()
             2 -> SettingsFragment()
             else -> throw IllegalArgumentException("Invalid position: $position")
         }

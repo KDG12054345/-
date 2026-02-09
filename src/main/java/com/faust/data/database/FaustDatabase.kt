@@ -8,27 +8,24 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.faust.models.AppGroup
 import com.faust.models.BlockedApp
-import com.faust.models.DailyUsageRecord
-import com.faust.models.FreePassItem
+import com.faust.models.BlockedDomain
 import com.faust.models.PointTransaction
 
 @Database(
     entities = [
         BlockedApp::class,
         PointTransaction::class,
-        FreePassItem::class,
-        DailyUsageRecord::class,
-        AppGroup::class
+        AppGroup::class,
+        BlockedDomain::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class FaustDatabase : RoomDatabase() {
     abstract fun appBlockDao(): AppBlockDao
     abstract fun pointTransactionDao(): PointTransactionDao
-    abstract fun freePassItemDao(): FreePassItemDao
-    abstract fun dailyUsageRecordDao(): DailyUsageRecordDao
     abstract fun appGroupDao(): AppGroupDao
+    abstract fun blockedDomainDao(): BlockedDomainDao
 
     companion object {
         @Volatile
@@ -70,6 +67,36 @@ abstract class FaustDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 버전 2에서 3으로의 Migration
+         * 새 테이블 추가: blocked_domains (URL 차단용)
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // blocked_domains 테이블 생성
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS blocked_domains (
+                        domain TEXT NOT NULL PRIMARY KEY,
+                        displayName TEXT,
+                        blockedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+            }
+        }
+
+        /**
+         * 버전 3에서 4로의 Migration
+         * FreePass 관련 테이블 제거: free_pass_items, daily_usage_records
+         * TimeCreditSystem으로 전환 (데이터는 SharedPreferences에 저장)
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // FreePass 관련 테이블 삭제
+                database.execSQL("DROP TABLE IF EXISTS free_pass_items")
+                database.execSQL("DROP TABLE IF EXISTS daily_usage_records")
+            }
+        }
+
         fun getDatabase(context: Context): FaustDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -77,7 +104,7 @@ abstract class FaustDatabase : RoomDatabase() {
                     FaustDatabase::class.java,
                     "faust_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration() // Migration 실패 시 폴백
                     .build()
                 INSTANCE = instance

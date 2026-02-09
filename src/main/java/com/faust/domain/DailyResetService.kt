@@ -7,14 +7,16 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import androidx.room.withTransaction
 import com.faust.FaustApplication
-import com.faust.data.database.FaustDatabase
 import com.faust.data.utils.PreferenceManager
 import com.faust.data.utils.TimeUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * [시스템 진입점: 시간 기반 진입점 / 부팅 진입점]
@@ -27,17 +29,46 @@ import kotlinx.coroutines.launch
  * @see ARCHITECTURE.md#시스템-진입점-system-entry-points
  */
 class DailyResetReceiver : BroadcastReceiver() {
+    companion object {
+        /**
+         * goAsync() 타임아웃.
+         * Android 시스템은 goAsync() 후 약 10초 이내에 finish()를 기대.
+         * 8초로 설정하여 2초 안전 마진 확보.
+         * 실제 정산 작업은 < 1초이므로 정상 상황에서는 타임아웃 미도달.
+         */
+        private const val GO_ASYNC_TIMEOUT_MS = 8_000L
+    }
+
     /**
      * [시스템 진입점: 시간 기반 진입점 / 부팅 진입점]
      * 
      * 역할: AlarmManager 트리거 또는 부팅 완료 이벤트를 수신하여 일일 초기화 로직을 실행합니다.
      * 트리거: "com.faust.DAILY_RESET" 액션 또는 ACTION_BOOT_COMPLETED
-     * 처리: DailyResetService.performReset() 호출
+     * 처리: goAsync() + applicationScope에서 performResetInternal() 호출
      */
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
             intent.action == "com.faust.DAILY_RESET") {
-            DailyResetService.performReset(context)
+            val pendingResult = goAsync()
+            val app = context.applicationContext as FaustApplication
+            app.applicationScope.launch {
+                try {
+                    withTimeout(GO_ASYNC_TIMEOUT_MS) {
+                        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+                            val preferenceManager = PreferenceManager(context.applicationContext)
+                            preferenceManager.setTimeCreditLastSyncTimeSync(0L)
+                            Log.d("DailyResetReceiver", "BOOT_COMPLETED: TimeCredit lastSyncTime 초기화 (동기 저장)")
+                        }
+                        DailyResetService.performResetInternal(context)
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    Log.e("DailyResetReceiver", "일일 초기화 타임아웃 (${GO_ASYNC_TIMEOUT_MS}ms 초과)", e)
+                } catch (e: Exception) {
+                    Log.e("DailyResetReceiver", "일일 초기화 실패", e)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
         }
     }
 }
@@ -45,6 +76,7 @@ class DailyResetReceiver : BroadcastReceiver() {
 object DailyResetService {
     private const val TAG = "DailyResetService"
     private const val REQUEST_CODE = 1004
+    private const val RESET_COOLDOWN_MS = 60_000L  // 1분 쿨다운 (중복 트리거 방지)
 
     /**
      * [시스템 진입점: 시간 기반 진입점]
@@ -139,58 +171,50 @@ object DailyResetService {
     }
 
     /**
+     * [Receiver 전용] suspend 버전. goAsync() 컨텍스트에서 호출.
+     * 정산 로직은 취소 가능 (타임아웃 시 중단). 후처리(알람 재스케줄링)만 NonCancellable.
+     */
+    suspend fun performResetInternal(context: Context) {
+        val preferenceManager = PreferenceManager(context)
+        val lastResetTime = preferenceManager.getLastDailyResetTime()
+        val elapsed = System.currentTimeMillis() - lastResetTime
+        if (elapsed < RESET_COOLDOWN_MS) {
+            Log.w(TAG, "정산 건너뜀: 마지막 일일 정산으로부터 ${elapsed}ms 이내 (쿨다운 ${RESET_COOLDOWN_MS}ms)")
+            return
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                Log.d(TAG, "일일 초기화 실행 (TimeCredit 확장 준비 완료)")
+                // 성공 시에만 쿨다운 타임스탬프 갱신
+                preferenceManager.setLastDailyResetTime(System.currentTimeMillis())
+            }
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) {
+                try {
+                    val appContext = context.applicationContext
+                    if (appContext != null) {
+                        scheduleDailyReset(appContext)
+                        Log.d(TAG, "다음 일일 초기화 스케줄링 완료 (NonCancellable)")
+                    } else {
+                        Log.e(TAG, "Cannot schedule next daily reset: applicationContext is null")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "다음 일일 초기화 스케줄링 실패", e)
+                }
+            }
+        }
+    }
+
+    /**
      * [시스템 진입점: 시간 기반 진입점]
      * 
-     * 역할: 일일 초기화 로직을 실행합니다. 스탠다드 티켓의 일일 사용 횟수를 0으로 초기화합니다.
-     * 트리거: AlarmManager 트리거 (사용자 지정 시간)
-     * 처리: DailyUsageRecord의 standardTicketUsedCount를 0으로 초기화
+     * 역할: 일일 초기화 로직을 실행합니다.
+     * 트리거: AlarmManager 트리거 (사용자 지정 시간) — 직접 호출 시 (하위 호환)
+     * 처리: performResetInternal() 호출
      */
     fun performReset(context: Context) {
-        val scope = CoroutineScope(Dispatchers.IO)
-        scope.launch {
-            try {
-                val database = (context.applicationContext as FaustApplication).database
-                val preferenceManager = PreferenceManager(context)
-
-                database.withTransaction {
-                    try {
-                        // 사용자 지정 시간 기준 오늘 날짜 계산
-                        val customTime = preferenceManager.getCustomDailyResetTime()
-                        val today = TimeUtils.getDayString(customTime)
-
-                        // 오늘 날짜의 기록이 있으면 사용 횟수 초기화, 없으면 생성
-                        val todayRecord = database.dailyUsageRecordDao().getTodayRecord(today)
-                        if (todayRecord != null) {
-                            // 기존 기록의 사용 횟수만 0으로 초기화
-                            val resetRecord = todayRecord.copy(standardTicketUsedCount = 0)
-                            database.dailyUsageRecordDao().insertOrUpdateRecord(resetRecord)
-                            Log.d(TAG, "일일 사용 횟수 초기화 완료: $today")
-                        } else {
-                            // 새 기록 생성 (이미 0이지만 명시적으로 생성)
-                            val newRecord = com.faust.models.DailyUsageRecord(
-                                date = today,
-                                standardTicketUsedCount = 0
-                            )
-                            database.dailyUsageRecordDao().insertOrUpdateRecord(newRecord)
-                            Log.d(TAG, "새 일일 기록 생성: $today")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error performing daily reset in transaction", e)
-                        throw e // 트랜잭션 롤백을 위해 예외 재발생
-                    }
-                }
-
-                // 다음 일일 초기화 스케줄링
-                val appContext = context.applicationContext
-                if (appContext != null) {
-                    scheduleDailyReset(appContext)
-                } else {
-                    Log.e(TAG, "Cannot schedule next daily reset: applicationContext is null")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to perform daily reset", e)
-                // 트랜잭션이 실패하면 자동으로 롤백됨
-            }
+        CoroutineScope(Dispatchers.IO).launch {
+            performResetInternal(context)
         }
     }
 
